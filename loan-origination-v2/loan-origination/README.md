@@ -17,8 +17,9 @@ Customer — all backed by real data.
 - **Bank self-service portal** (`/staff`): staff log in and land in a
   dedicated portal scoped to their own bank. What they can do depends on
   their position:
-  - **Team** (gated on `can_manage_staff`) — register new staff for the bank
-    and assign them a position at creation time.
+  - **Team** (gated on `can_manage_staff`) — register new staff for the bank,
+    assign them a position at creation time, and **deactivate/reactivate**
+    staff accounts (soft-delete, not a hard row delete — see below).
   - **Products** and **Policies** (gated on `can_manage_products`) — add
     loan products and auto-approval policies for the bank.
   - **Applications** — every application submitted to the bank, with status
@@ -44,6 +45,22 @@ Customer — all backed by real data.
   Admin "Add staff" modal gained a Position dropdown (scoped to the chosen
   bank), so admins can create fully-configured staff accounts too, not just
   bank self-service.
+- **Removing staff = deactivate, not delete**: accounts are never hard-deleted
+  (they're referenced by past applications, decisions, and audit log entries,
+  which need to stay intact for compliance). Instead, both the Admin Users
+  page and the bank Team page have a Deactivate/Reactivate action per row:
+  - Deactivating flips `users.is_active` to `false`. That account can no
+    longer log in, immediately invalidates any JWT it's currently holding
+    (checked on every authenticated request, not just at login), and is
+    automatically skipped when the routing logic decides who to notify for
+    an escalation.
+  - Every deactivate/reactivate writes an `audit_logs` row.
+  - A staff member can never deactivate their own account (the button is
+    hidden on their own row) — otherwise the last `can_manage_staff` holder
+    at a bank could lock themselves out with no way back in.
+  - On the Team page this is gated the same way as everything else
+    (`can_manage_staff`); on the Admin Users page it works platform-wide,
+    across any bank or role.
 - Two new tables: `bank_positions` and `notifications`, plus new columns
   (`users.position_id`, `escalations.escalated_to_position_id`) — see
   `migrations/versions/e80fc8b39b2c_bank_hierarchy_and_notifications.py`.

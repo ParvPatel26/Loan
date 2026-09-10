@@ -6,7 +6,7 @@ import { api, type UserOut, type BankOut, type BankPositionOut, ApiError } from 
 import { useToast } from "@/components/ui/Toast";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { TableSkeleton } from "@/components/ui/Skeleton";
-import { RoleBadge } from "@/components/ui/Badge";
+import { Badge, RoleBadge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -17,12 +17,13 @@ function initials(name: string) {
 }
 
 export default function AdminUsers() {
-  const { token } = useAuth();
+  const { token, user: currentUser } = useAuth();
   const { show } = useToast();
   const [users, setUsers] = useState<UserOut[]>([]);
   const [banks, setBanks] = useState<BankOut[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState({ full_name: "", email: "", password: "", bank_id: "", position_id: "" });
@@ -86,6 +87,20 @@ export default function AdminUsers() {
     }
   }
 
+  async function handleToggleActive(u: UserOut) {
+    if (!token) return;
+    setTogglingId(u.id);
+    try {
+      const updated = u.is_active ? await api.deactivateUser(token, u.id) : await api.reactivateUser(token, u.id);
+      setUsers((list) => list.map((x) => (x.id === updated.id ? updated : x)));
+      show(`${updated.full_name} ${updated.is_active ? "reactivated" : "deactivated"}`, "success");
+    } catch (err) {
+      show(err instanceof ApiError ? err.message : "Failed to update account", "error");
+    } finally {
+      setTogglingId(null);
+    }
+  }
+
   return (
     <div>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -104,7 +119,7 @@ export default function AdminUsers() {
       <Card className="mt-6 overflow-hidden">
         <CardHeader title="All users" subtitle={`${users.length} total`} />
         {loading ? (
-          <TableSkeleton rows={4} cols={3} />
+          <TableSkeleton rows={4} cols={5} />
         ) : users.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-4 py-14 text-center">
             <IconUsers className="h-8 w-8 text-slate-300" />
@@ -112,17 +127,19 @@ export default function AdminUsers() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[540px] text-left text-sm">
+            <table className="w-full min-w-[680px] text-left text-sm">
               <thead className="border-b border-slate-100 bg-slate-50/60 text-xs uppercase tracking-wide text-slate-400">
                 <tr>
                   <th className="px-5 py-3 font-medium">Name</th>
                   <th className="px-5 py-3 font-medium">Email</th>
                   <th className="px-5 py-3 font-medium">Role</th>
+                  <th className="px-5 py-3 font-medium">Status</th>
+                  <th className="px-5 py-3 font-medium"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {users.map((u) => (
-                  <tr key={u.id} className="transition-colors hover:bg-slate-50/60">
+                  <tr key={u.id} className={`transition-colors hover:bg-slate-50/60 ${u.is_active ? "" : "opacity-60"}`}>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
                         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
@@ -134,6 +151,21 @@ export default function AdminUsers() {
                     <td className="px-5 py-3.5 text-slate-500">{u.email}</td>
                     <td className="px-5 py-3.5">
                       <RoleBadge role={u.role} />
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <Badge tone={u.is_active ? "emerald" : "slate"}>{u.is_active ? "Active" : "Inactive"}</Badge>
+                    </td>
+                    <td className="px-5 py-3.5 text-right">
+                      {u.id !== currentUser?.id && (
+                        <Button
+                          variant={u.is_active ? "secondary" : "primary"}
+                          loading={togglingId === u.id}
+                          onClick={() => handleToggleActive(u)}
+                          className="px-3 py-1.5 text-xs"
+                        >
+                          {u.is_active ? "Deactivate" : "Reactivate"}
+                        </Button>
+                      )}
                     </td>
                   </tr>
                 ))}

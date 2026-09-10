@@ -7,6 +7,7 @@ export interface UserOut {
   role: "customer" | "staff" | "admin";
   bank_id: string | null;
   position_id: string | null;
+  is_active: boolean;
 }
 
 export interface TokenResponse {
@@ -190,12 +191,20 @@ export const api = {
   auditLogs: (token: string) => request<AuditLogOut[]>("/admin/audit-logs", {}, token),
   createStaff: (token: string, payload: CreateStaffPayload) =>
     request<UserOut>("/admin/staff", { method: "POST", body: JSON.stringify(payload) }, token),
+  deactivateUser: (token: string, id: string) =>
+    request<UserOut>(`/admin/users/${id}/deactivate`, { method: "POST" }, token),
+  reactivateUser: (token: string, id: string) =>
+    request<UserOut>(`/admin/users/${id}/reactivate`, { method: "POST" }, token),
 
   // Bank self-service (scoped to the logged-in staff member's own bank)
   bankPositions: (token: string) => request<BankPositionOut[]>("/bank/positions", {}, token),
   bankStaff: (token: string) => request<UserOut[]>("/bank/staff", {}, token),
   createBankStaff: (token: string, payload: CreateBankStaffPayload) =>
     request<UserOut>("/bank/staff", { method: "POST", body: JSON.stringify(payload) }, token),
+  deactivateBankStaff: (token: string, id: string) =>
+    request<UserOut>(`/bank/staff/${id}/deactivate`, { method: "POST" }, token),
+  reactivateBankStaff: (token: string, id: string) =>
+    request<UserOut>(`/bank/staff/${id}/reactivate`, { method: "POST" }, token),
   bankProducts: (token: string) => request<LoanProductOut[]>("/bank/loan-products", {}, token),
   createBankProduct: (token: string, payload: CreateLoanProductPayload) =>
     request<LoanProductOut>("/bank/loan-products", { method: "POST", body: JSON.stringify(payload) }, token),

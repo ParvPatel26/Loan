@@ -91,6 +91,61 @@ async def create_staff(
     return staff
 
 
+@router.post("/users/{user_id}/deactivate", response_model=UserOut)
+async def deactivate_user(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_role(UserRole.ADMIN.value)),
+):
+    if user_id == str(admin.id):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot deactivate your own account")
+
+    target = await db.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if target.is_active:
+        target.is_active = False
+        db.add(
+            AuditLog(
+                entity_type="user",
+                entity_id=str(target.id),
+                action="user_deactivated",
+                performed_by=admin.id,
+                after_state={"email": target.email, "is_active": False},
+            )
+        )
+        await db.commit()
+        await db.refresh(target)
+    return target
+
+
+@router.post("/users/{user_id}/reactivate", response_model=UserOut)
+async def reactivate_user(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_role(UserRole.ADMIN.value)),
+):
+    target = await db.get(User, user_id)
+    if target is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if not target.is_active:
+        target.is_active = True
+        db.add(
+            AuditLog(
+                entity_type="user",
+                entity_id=str(target.id),
+                action="user_reactivated",
+                performed_by=admin.id,
+                after_state={"email": target.email, "is_active": True},
+            )
+        )
+        await db.commit()
+        await db.refresh(target)
+    return target
+
+
 @router.get("/banks", response_model=list[BankOut])
 async def list_banks(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Bank).order_by(Bank.name))

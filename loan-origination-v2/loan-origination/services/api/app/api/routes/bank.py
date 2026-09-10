@@ -83,6 +83,61 @@ async def create_bank_staff(
     return staff
 
 
+@router.post("/staff/{staff_id}/deactivate", response_model=UserOut)
+async def deactivate_bank_staff(
+    staff_id: uuid.UUID,
+    actor: User = Depends(require_bank_permission("can_manage_staff")),
+    db: AsyncSession = Depends(get_db),
+):
+    if staff_id == actor.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You cannot deactivate your own account")
+
+    target = await db.get(User, staff_id)
+    if target is None or target.role != UserRole.STAFF.value or target.bank_id != actor.bank_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found")
+
+    if target.is_active:
+        target.is_active = False
+        db.add(
+            AuditLog(
+                entity_type="user",
+                entity_id=str(target.id),
+                action="staff_deactivated",
+                performed_by=actor.id,
+                after_state={"email": target.email, "is_active": False},
+            )
+        )
+        await db.commit()
+        await db.refresh(target)
+    return target
+
+
+@router.post("/staff/{staff_id}/reactivate", response_model=UserOut)
+async def reactivate_bank_staff(
+    staff_id: uuid.UUID,
+    actor: User = Depends(require_bank_permission("can_manage_staff")),
+    db: AsyncSession = Depends(get_db),
+):
+    target = await db.get(User, staff_id)
+    if target is None or target.role != UserRole.STAFF.value or target.bank_id != actor.bank_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found")
+
+    if not target.is_active:
+        target.is_active = True
+        db.add(
+            AuditLog(
+                entity_type="user",
+                entity_id=str(target.id),
+                action="staff_reactivated",
+                performed_by=actor.id,
+                after_state={"email": target.email, "is_active": True},
+            )
+        )
+        await db.commit()
+        await db.refresh(target)
+    return target
+
+
 @router.get("/loan-products", response_model=list[LoanProductOut])
 async def list_bank_products(staff: User = Depends(get_current_staff), db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(LoanProduct).where(LoanProduct.bank_id == staff.bank_id).order_by(LoanProduct.name))
