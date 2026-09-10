@@ -7,6 +7,7 @@ from app.core.security import hash_password
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
 from app.models.bank import Bank
+from app.models.bank_position import BankPosition
 from app.models.enums import UserRole
 from app.models.lending_policy import LendingPolicy
 from app.models.loan_application import LoanApplication
@@ -21,6 +22,7 @@ from app.schemas.admin import (
     LoanProductOut,
 )
 from app.schemas.auth import UserOut
+from app.schemas.bank import BankPositionOut
 
 router = APIRouter(dependencies=[Depends(require_role(UserRole.ADMIN.value))])
 
@@ -59,12 +61,18 @@ async def create_staff(
     if bank is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bank not found")
 
+    if payload.position_id is not None:
+        position = await db.get(BankPosition, payload.position_id)
+        if position is None or position.bank_id != payload.bank_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Position not found for this bank")
+
     staff = User(
         email=payload.email,
         password_hash=hash_password(payload.password),
         full_name=payload.full_name,
         role=UserRole.STAFF.value,
         bank_id=payload.bank_id,
+        position_id=payload.position_id,
     )
     db.add(staff)
     await db.flush()
@@ -86,6 +94,14 @@ async def create_staff(
 @router.get("/banks", response_model=list[BankOut])
 async def list_banks(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Bank).order_by(Bank.name))
+    return result.scalars().all()
+
+
+@router.get("/banks/{bank_id}/positions", response_model=list[BankPositionOut])
+async def list_bank_positions_for_admin(bank_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(BankPosition).where(BankPosition.bank_id == bank_id).order_by(BankPosition.rank.asc())
+    )
     return result.scalars().all()
 
 

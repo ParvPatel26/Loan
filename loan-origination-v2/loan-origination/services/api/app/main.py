@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import admin, auth
+from app.api.routes import admin, auth, bank, loans
 
 app = FastAPI(title="Loan Origination API", version="0.1.0")
 
@@ -21,3 +21,5 @@ def health():
 
 app.include_router(auth.router, prefix="/auth", tags=["auth"])
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
+app.include_router(bank.router, prefix="/bank", tags=["bank"])
+app.include_router(loans.router, prefix="/loans", tags=["loans"])

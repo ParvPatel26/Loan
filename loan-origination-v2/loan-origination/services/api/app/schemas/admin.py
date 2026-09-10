@@ -64,3 +64,4 @@ class CreateStaffRequest(BaseModel):
     password: str
     full_name: str
     bank_id: uuid.UUID
+    position_id: uuid.UUID | None = None

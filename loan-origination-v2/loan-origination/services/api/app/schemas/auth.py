@@ -20,6 +20,7 @@ class UserOut(BaseModel):
     full_name: str
     role: str
     bank_id: uuid.UUID | None = None
+    position_id: uuid.UUID | None = None
 
     model_config = {"from_attributes": True}
 

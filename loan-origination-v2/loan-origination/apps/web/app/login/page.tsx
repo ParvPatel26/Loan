@@ -12,7 +12,8 @@ import { IconAlert } from "@/components/icons";
 
 const DEMO_ACCOUNTS = [
   { role: "Admin", email: "admin@bank.com", password: "Admin@123" },
-  { role: "Staff", email: "staff@bank.com", password: "Staff@123" },
+  { role: "Credit Manager", email: "manager@bank.com", password: "Manager@123" },
+  { role: "Loan Officer", email: "officer@bank.com", password: "Officer@123" },
   { role: "Customer", email: "customer@bank.com", password: "Customer@123" },
 ];
 

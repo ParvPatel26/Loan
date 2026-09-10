@@ -9,9 +9,16 @@ create duplicates.
 
 Default logins created (all passwords follow the same pattern — change them
 before this ever goes near production):
-    admin@bank.com    / Admin@123      (role: admin)
-    staff@bank.com    / Staff@123      (role: staff, scoped to First National Bank)
+    admin@bank.com    / Admin@123      (role: admin, platform-wide)
+    manager@bank.com  / Manager@123    (role: staff, Credit Manager — can manage
+                                         First National Bank's staff/products/policies)
+    officer@bank.com  / Officer@123    (role: staff, Loan Officer — restricted,
+                                         demonstrates permission gating)
     customer@bank.com / Customer@123   (role: customer)
+
+Also seeds First National Bank's approval ladder (bank_positions): Loan Officer
+-> Credit Manager -> CFO -> CEO -> Board, each with an approval limit, used by
+the auto-approve/escalate routing in app/core/lending_logic.py.
 """
 import asyncio
 
@@ -20,6 +27,7 @@ from sqlalchemy import select
 from app.core.security import hash_password
 from app.db.session import AsyncSessionLocal
 from app.models.bank import Bank
+from app.models.bank_position import BankPosition
 from app.models.enums import LoanType, UserRole
 from app.models.lending_policy import LendingPolicy
 from app.models.loan_product import LoanProduct
@@ -59,18 +67,47 @@ async def seed() -> None:
         )
         print(f"Admin user: admin@bank.com ({'created' if created else 'already existed'})")
 
-        staff_user, created = await get_or_create(
+        ladder = [
+            {"title": "Loan Officer", "rank": 1, "max_approval_amount": 50_000, "can_manage_staff": False, "can_manage_products": False},
+            {"title": "Credit Manager", "rank": 2, "max_approval_amount": 250_000, "can_manage_staff": True, "can_manage_products": True},
+            {"title": "CFO", "rank": 3, "max_approval_amount": 1_000_000, "can_manage_staff": True, "can_manage_products": True},
+            {"title": "CEO", "rank": 4, "max_approval_amount": 5_000_000, "can_manage_staff": True, "can_manage_products": True},
+            {"title": "Board", "rank": 5, "max_approval_amount": None, "can_manage_staff": True, "can_manage_products": True},
+        ]
+        positions = {}
+        for level in ladder:
+            title = level.pop("title")
+            position, created = await get_or_create(db, BankPosition, bank_id=bank.id, title=title, defaults=level)
+            positions[title] = position
+            print(f"Position: {title} ({'created' if created else 'already existed'})")
+
+        manager_user, created = await get_or_create(
             db,
             User,
-            email="staff@bank.com",
+            email="manager@bank.com",
             defaults={
-                "password_hash": hash_password("Staff@123"),
-                "full_name": "Loan Officer",
+                "password_hash": hash_password("Manager@123"),
+                "full_name": "Casey Manager",
                 "role": UserRole.STAFF.value,
                 "bank_id": bank.id,
+                "position_id": positions["Credit Manager"].id,
             },
         )
-        print(f"Staff user: staff@bank.com ({'created' if created else 'already existed'})")
+        print(f"Staff user: manager@bank.com — Credit Manager ({'created' if created else 'already existed'})")
+
+        officer_user, created = await get_or_create(
+            db,
+            User,
+            email="officer@bank.com",
+            defaults={
+                "password_hash": hash_password("Officer@123"),
+                "full_name": "Riley Officer",
+                "role": UserRole.STAFF.value,
+                "bank_id": bank.id,
+                "position_id": positions["Loan Officer"].id,
+            },
+        )
+        print(f"Staff user: officer@bank.com — Loan Officer ({'created' if created else 'already existed'})")
 
         customer_user, created = await get_or_create(
             db,
@@ -154,8 +191,9 @@ async def seed() -> None:
 
         await db.commit()
         print("\nSeed complete. Log in at http://localhost:3000/login with:")
-        print("  admin@bank.com    / Admin@123")
-        print("  staff@bank.com    / Staff@123")
+        print("  admin@bank.com    / Admin@123    (platform admin)")
+        print("  manager@bank.com  / Manager@123  (Credit Manager — full bank self-service)")
+        print("  officer@bank.com  / Officer@123  (Loan Officer — restricted)")
         print("  customer@bank.com / Customer@123")
 
 

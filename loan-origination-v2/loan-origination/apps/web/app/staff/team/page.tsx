@@ -2,83 +2,59 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 import { useAuth } from "@/lib/auth-context";
-import { api, type UserOut, type BankOut, type BankPositionOut, ApiError } from "@/lib/api";
+import { useStaff } from "@/lib/staff-context";
+import { api, type UserOut, ApiError } from "@/lib/api";
 import { useToast } from "@/components/ui/Toast";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { TableSkeleton } from "@/components/ui/Skeleton";
-import { RoleBadge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
-import { IconUserPlus, IconUsers } from "@/components/icons";
+import { IconLock, IconUserPlus, IconUsers } from "@/components/icons";
 
 function initials(name: string) {
   return name.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
 }
 
-export default function AdminUsers() {
+export default function StaffTeam() {
   const { token } = useAuth();
+  const { position, positions, loading: staffLoading } = useStaff();
   const { show } = useToast();
-  const [users, setUsers] = useState<UserOut[]>([]);
-  const [banks, setBanks] = useState<BankOut[]>([]);
+  const [team, setTeam] = useState<UserOut[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [modalOpen, setModalOpen] = useState(false);
-  const [form, setForm] = useState({ full_name: "", email: "", password: "", bank_id: "", position_id: "" });
+  const [form, setForm] = useState({ full_name: "", email: "", password: "", position_id: "" });
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [positions, setPositions] = useState<BankPositionOut[]>([]);
-  const [positionsLoading, setPositionsLoading] = useState(false);
-
-  function loadUsers(t: string) {
-    setLoading(true);
-    Promise.all([api.users(t), api.banks(t)])
-      .then(([u, b]) => {
-        setUsers(u);
-        setBanks(b);
-        setForm((f) => ({ ...f, bank_id: f.bank_id || b[0]?.id || "" }));
-      })
-      .catch((e) => setError(e instanceof ApiError ? e.message : "Failed to load"))
-      .finally(() => setLoading(false));
-  }
 
   useEffect(() => {
     if (!token) return;
-    loadUsers(token);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    api
+      .bankStaff(token)
+      .then(setTeam)
+      .catch((e) => setError(e instanceof ApiError ? e.message : "Failed to load"))
+      .finally(() => setLoading(false));
   }, [token]);
 
   useEffect(() => {
-    if (!token || !form.bank_id) {
-      setPositions([]);
-      return;
-    }
-    setPositionsLoading(true);
-    api
-      .bankPositionsForAdmin(token, form.bank_id)
-      .then((p) => {
-        setPositions(p);
-        setForm((f) => (p.some((pos) => pos.id === f.position_id) ? f : { ...f, position_id: "" }));
-      })
-      .catch(() => setPositions([]))
-      .finally(() => setPositionsLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, form.bank_id]);
+    setForm((f) => (f.position_id ? f : { ...f, position_id: positions[0]?.id || "" }));
+  }, [positions]);
 
-  async function handleCreateStaff(e: FormEvent) {
+  async function handleCreate(e: FormEvent) {
     e.preventDefault();
     if (!token) return;
     setFormError(null);
     setSubmitting(true);
     try {
-      const newUser = await api.createStaff(token, { ...form, position_id: form.position_id || null });
-      setUsers((u) => [...u, newUser]);
+      const newStaff = await api.createBankStaff(token, form);
+      setTeam((t) => [...t, newStaff]);
       setModalOpen(false);
-      setForm({ full_name: "", email: "", password: "", bank_id: banks[0]?.id || "", position_id: "" });
-      show(`${newUser.full_name} added as staff`, "success");
+      setForm({ full_name: "", email: "", password: "", position_id: positions[0]?.id || "" });
+      show(`${newStaff.full_name} added to the team`, "success");
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : "Failed to create staff member";
+      const message = err instanceof ApiError ? err.message : "Failed to add team member";
       setFormError(message);
       show(message, "error");
     } finally {
@@ -86,14 +62,24 @@ export default function AdminUsers() {
     }
   }
 
+  if (!staffLoading && position && !position.can_manage_staff) {
+    return (
+      <Card className="mt-6 flex flex-col items-center gap-2 p-10 text-center">
+        <IconLock className="h-8 w-8 text-slate-300" />
+        <h1 className="text-sm font-semibold text-slate-900">Restricted</h1>
+        <p className="text-sm text-slate-400">Your position ({position.title}) doesn&apos;t include staff management.</p>
+      </Card>
+    );
+  }
+
   return (
     <div>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Users</h1>
-          <p className="mt-1 text-sm text-slate-500">All accounts across customer, staff and admin roles.</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Team</h1>
+          <p className="mt-1 text-sm text-slate-500">Staff registered under your bank.</p>
         </div>
-        <Button onClick={() => setModalOpen(true)} disabled={banks.length === 0}>
+        <Button onClick={() => setModalOpen(true)} disabled={positions.length === 0}>
           <IconUserPlus className="h-4 w-4" />
           Add staff
         </Button>
@@ -102,13 +88,13 @@ export default function AdminUsers() {
       {error && <div className="mt-4 rounded-lg bg-red-50 px-3.5 py-2.5 text-sm text-red-700">{error}</div>}
 
       <Card className="mt-6 overflow-hidden">
-        <CardHeader title="All users" subtitle={`${users.length} total`} />
+        <CardHeader title="Bank staff" subtitle={`${team.length} total`} />
         {loading ? (
-          <TableSkeleton rows={4} cols={3} />
-        ) : users.length === 0 ? (
+          <TableSkeleton rows={3} cols={3} />
+        ) : team.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-4 py-14 text-center">
             <IconUsers className="h-8 w-8 text-slate-300" />
-            <p className="text-sm text-slate-400">No users yet.</p>
+            <p className="text-sm text-slate-400">No staff yet.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -117,26 +103,29 @@ export default function AdminUsers() {
                 <tr>
                   <th className="px-5 py-3 font-medium">Name</th>
                   <th className="px-5 py-3 font-medium">Email</th>
-                  <th className="px-5 py-3 font-medium">Role</th>
+                  <th className="px-5 py-3 font-medium">Position</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {users.map((u) => (
-                  <tr key={u.id} className="transition-colors hover:bg-slate-50/60">
-                    <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
-                          {initials(u.full_name)}
+                {team.map((u) => {
+                  const pos = positions.find((p) => p.id === u.position_id);
+                  return (
+                    <tr key={u.id} className="transition-colors hover:bg-slate-50/60">
+                      <td className="px-5 py-3.5">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
+                            {initials(u.full_name)}
+                          </div>
+                          <span className="font-medium text-slate-900">{u.full_name}</span>
                         </div>
-                        <span className="font-medium text-slate-900">{u.full_name}</span>
-                      </div>
-                    </td>
-                    <td className="px-5 py-3.5 text-slate-500">{u.email}</td>
-                    <td className="px-5 py-3.5">
-                      <RoleBadge role={u.role} />
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="px-5 py-3.5 text-slate-500">{u.email}</td>
+                      <td className="px-5 py-3.5">
+                        {pos ? pos.title : <span className="text-slate-400">Unassigned</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -144,7 +133,7 @@ export default function AdminUsers() {
       </Card>
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Add staff member">
-        <form onSubmit={handleCreateStaff} className="space-y-4">
+        <form onSubmit={handleCreate} className="space-y-4">
           <Field label="Full name">
             <Input
               required
@@ -172,29 +161,12 @@ export default function AdminUsers() {
               placeholder="••••••••"
             />
           </Field>
-          <Field label="Bank">
+          <Field label="Position">
             <Select
               required
-              value={form.bank_id}
-              onChange={(e) => setForm((f) => ({ ...f, bank_id: e.target.value }))}
-            >
-              {banks.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field
-            label="Position"
-            hint={positionsLoading ? "Loading positions…" : "Sets approval limit and management permissions. Optional."}
-          >
-            <Select
               value={form.position_id}
               onChange={(e) => setForm((f) => ({ ...f, position_id: e.target.value }))}
-              disabled={positionsLoading || positions.length === 0}
             >
-              <option value="">No position</option>
               {positions.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.title}

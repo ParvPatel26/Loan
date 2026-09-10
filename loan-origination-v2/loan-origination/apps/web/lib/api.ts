@@ -6,6 +6,7 @@ export interface UserOut {
   full_name: string;
   role: "customer" | "staff" | "admin";
   bank_id: string | null;
+  position_id: string | null;
 }
 
 export interface TokenResponse {
@@ -61,11 +62,78 @@ export interface AuditLogOut {
   created_at: string;
 }
 
+export interface BankPositionOut {
+  id: string;
+  bank_id: string;
+  title: string;
+  rank: number;
+  max_approval_amount: number | null;
+  can_manage_staff: boolean;
+  can_manage_products: boolean;
+}
+
+export interface LoanApplicationOut {
+  id: string;
+  applicant_id: string;
+  bank_id: string;
+  product_id: string;
+  loan_type: string;
+  requested_amount: number;
+  purpose: string | null;
+  status: string;
+  created_at: string;
+  pending_position_title: string | null;
+}
+
+export interface NotificationOut {
+  id: string;
+  title: string;
+  message: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
 export interface CreateStaffPayload {
   email: string;
   password: string;
   full_name: string;
   bank_id: string;
+  position_id?: string | null;
+}
+
+export interface CreateBankStaffPayload {
+  email: string;
+  password: string;
+  full_name: string;
+  position_id: string;
+}
+
+export interface CreateLoanProductPayload {
+  product_type: string;
+  name: string;
+  min_amount: number;
+  max_amount: number;
+  interest_rate_min: number;
+  interest_rate_max: number;
+  tenure_min_months: number;
+  tenure_max_months: number;
+}
+
+export interface CreateLendingPolicyPayload {
+  product_id?: string | null;
+  auto_approval_max_amount: number;
+  min_credit_score: number;
+  max_dti_ratio: number;
+}
+
+export interface LoanApplyPayload {
+  bank_id: string;
+  product_id: string;
+  requested_amount: number;
+  purpose?: string;
+  tenure_requested_months: number;
 }
 
 export class ApiError extends Error {
@@ -111,12 +179,37 @@ export const api = {
 
   me: (token: string) => request<UserOut>("/auth/me", {}, token),
 
+  // Platform admin (cross-bank)
   dashboard: (token: string) => request<DashboardStats>("/admin/dashboard", {}, token),
   users: (token: string) => request<UserOut[]>("/admin/users", {}, token),
   banks: (token: string) => request<BankOut[]>("/admin/banks", {}, token),
+  bankPositionsForAdmin: (token: string, bankId: string) =>
+    request<BankPositionOut[]>(`/admin/banks/${bankId}/positions`, {}, token),
   loanProducts: (token: string) => request<LoanProductOut[]>("/admin/loan-products", {}, token),
   lendingPolicies: (token: string) => request<LendingPolicyOut[]>("/admin/lending-policies", {}, token),
   auditLogs: (token: string) => request<AuditLogOut[]>("/admin/audit-logs", {}, token),
   createStaff: (token: string, payload: CreateStaffPayload) =>
     request<UserOut>("/admin/staff", { method: "POST", body: JSON.stringify(payload) }, token),
+
+  // Bank self-service (scoped to the logged-in staff member's own bank)
+  bankPositions: (token: string) => request<BankPositionOut[]>("/bank/positions", {}, token),
+  bankStaff: (token: string) => request<UserOut[]>("/bank/staff", {}, token),
+  createBankStaff: (token: string, payload: CreateBankStaffPayload) =>
+    request<UserOut>("/bank/staff", { method: "POST", body: JSON.stringify(payload) }, token),
+  bankProducts: (token: string) => request<LoanProductOut[]>("/bank/loan-products", {}, token),
+  createBankProduct: (token: string, payload: CreateLoanProductPayload) =>
+    request<LoanProductOut>("/bank/loan-products", { method: "POST", body: JSON.stringify(payload) }, token),
+  bankPolicies: (token: string) => request<LendingPolicyOut[]>("/bank/lending-policies", {}, token),
+  createBankPolicy: (token: string, payload: CreateLendingPolicyPayload) =>
+    request<LendingPolicyOut>("/bank/lending-policies", { method: "POST", body: JSON.stringify(payload) }, token),
+  bankApplications: (token: string) => request<LoanApplicationOut[]>("/bank/loan-applications", {}, token),
+  notifications: (token: string) => request<NotificationOut[]>("/bank/notifications", {}, token),
+  markNotificationRead: (token: string, id: string) =>
+    request<NotificationOut>(`/bank/notifications/${id}/read`, { method: "POST" }, token),
+
+  // Customer-facing loans
+  browseProducts: () => request<LoanProductOut[]>("/loans/products"),
+  applyForLoan: (token: string, payload: LoanApplyPayload) =>
+    request<LoanApplicationOut>("/loans/apply", { method: "POST", body: JSON.stringify(payload) }, token),
+  myApplications: (token: string) => request<LoanApplicationOut[]>("/loans/my-applications", {}, token),
 };

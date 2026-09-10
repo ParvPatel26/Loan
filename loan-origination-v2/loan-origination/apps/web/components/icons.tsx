@@ -142,3 +142,31 @@ export function IconSparkle({ className }: IconProps) {
     </svg>
   );
 }
+
+export function IconBell({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={base} strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M6 9.5a6 6 0 1112 0c0 4 1.2 5.5 1.75 6.25H4.25C4.8 15 6 13.5 6 9.5z" />
+      <path d="M10 19a2 2 0 004 0" />
+    </svg>
+  );
+}
+
+export function IconLock({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={base} strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <rect x="5" y="10.5" width="14" height="9.5" rx="1.75" />
+      <path d="M8 10.5V7.5a4 4 0 018 0v3" />
+    </svg>
+  );
+}
+
+export function IconClipboard({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={base} strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <rect x="5.5" y="4.5" width="13" height="17" rx="1.5" />
+      <path d="M9 4.5V3.75a1.25 1.25 0 011.25-1.25h3.5A1.25 1.25 0 0115 3.75V4.5" />
+      <path d="M8.5 11h7M8.5 14.5h7M8.5 18h4.5" />
+    </svg>
+  );
+}
