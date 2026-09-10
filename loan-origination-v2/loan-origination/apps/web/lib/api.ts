@@ -61,7 +61,14 @@ export interface AuditLogOut {
   created_at: string;
 }
 
-class ApiError extends Error {
+export interface CreateStaffPayload {
+  email: string;
+  password: string;
+  full_name: string;
+  bank_id: string;
+}
+
+export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
     super(message);
@@ -110,6 +117,6 @@ export const api = {
   loanProducts: (token: string) => request<LoanProductOut[]>("/admin/loan-products", {}, token),
   lendingPolicies: (token: string) => request<LendingPolicyOut[]>("/admin/lending-policies", {}, token),
   auditLogs: (token: string) => request<AuditLogOut[]>("/admin/audit-logs", {}, token),
+  createStaff: (token: string, payload: CreateStaffPayload) =>
+    request<UserOut>("/admin/staff", { method: "POST", body: JSON.stringify(payload) }, token),
 };
-
-export { ApiError };

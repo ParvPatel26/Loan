@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import require_role
+from app.core.security import hash_password
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
 from app.models.bank import Bank
@@ -14,6 +15,7 @@ from app.models.user import User
 from app.schemas.admin import (
     AuditLogOut,
     BankOut,
+    CreateStaffRequest,
     DashboardStats,
     LendingPolicyOut,
     LoanProductOut,
@@ -41,6 +43,44 @@ async def dashboard(db: AsyncSession = Depends(get_db)):
 async def list_users(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).order_by(User.created_at))
     return result.scalars().all()
+
+
+@router.post("/staff", response_model=UserOut, status_code=status.HTTP_201_CREATED)
+async def create_staff(
+    payload: CreateStaffRequest,
+    db: AsyncSession = Depends(get_db),
+    admin: User = Depends(require_role(UserRole.ADMIN.value)),
+):
+    existing = await db.execute(select(User).where(User.email == payload.email))
+    if existing.scalar_one_or_none() is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+
+    bank = await db.get(Bank, payload.bank_id)
+    if bank is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Bank not found")
+
+    staff = User(
+        email=payload.email,
+        password_hash=hash_password(payload.password),
+        full_name=payload.full_name,
+        role=UserRole.STAFF.value,
+        bank_id=payload.bank_id,
+    )
+    db.add(staff)
+    await db.flush()
+
+    db.add(
+        AuditLog(
+            entity_type="user",
+            entity_id=str(staff.id),
+            action="staff_created",
+            performed_by=admin.id,
+            after_state={"email": staff.email, "full_name": staff.full_name, "bank_id": str(payload.bank_id)},
+        )
+    )
+    await db.commit()
+    await db.refresh(staff)
+    return staff
 
 
 @router.get("/banks", response_model=list[BankOut])

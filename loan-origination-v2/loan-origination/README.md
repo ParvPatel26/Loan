@@ -1,8 +1,8 @@
-# Loan Origination Platform — v2 (DB + auth + admin portal)
+# Loan Origination Platform — v3 (redesigned UI + register + admin-adds-staff)
 
-Full-stack scaffold: Next.js frontend, FastAPI backend, PostgreSQL database with
-the complete 16-table schema, JWT auth, and a working, responsive Admin portal
-backed by real data.
+Full-stack build: Next.js frontend, FastAPI backend, PostgreSQL database with
+the complete 16-table schema, JWT auth, a polished responsive UI, and a working
+Admin portal backed by real data.
 
 ## What's in this version
 
@@ -14,17 +14,22 @@ backed by real data.
   — you don't need to run `alembic revision --autogenerate` yourself for this
   first migration, it's included.
 - **Auth**: `/auth/login`, `/auth/register`, `/auth/me` — JWT-based, password
-  hashing via bcrypt, role stored in the token.
+  hashing via bcrypt, role stored in the token. `/register` self-signs up as a
+  **customer**; bank staff accounts can only be created by an admin.
 - **Admin API**: `/admin/dashboard`, `/admin/users`, `/admin/banks`,
-  `/admin/loan-products`, `/admin/lending-policies`, `/admin/audit-logs` — all
-  gated to the `admin` role.
+  `/admin/loan-products`, `/admin/lending-policies`, `/admin/audit-logs`,
+  and `/admin/staff` (POST — creates a staff account, writes an audit log
+  entry) — all gated to the `admin` role.
 - **Seed script**: creates one bank, three loan products, one lending policy,
   and three default logins (admin/staff/customer) so you can log in immediately.
-- **Frontend**: a working login page and a fully responsive Admin portal
-  (collapsible sidebar on mobile, real data from the API) — Overview, Users,
-  Products, Policies, Audit. Customer and staff portals are stub landing pages
-  for now (their real flows come in later phases) — but login and role-based
-  redirect work for all three.
+- **Redesigned, responsive frontend**: a shared UI kit (buttons, inputs, cards,
+  modals, toasts, skeleton loaders, role badges) used consistently across a
+  split-panel login/register, and a full Admin portal — Overview, Users
+  (with an **Add staff** modal — pick a bank, set a temp password, the new
+  account appears immediately), Products, Policies, Audit. Sidebar collapses
+  to a mobile menu below the `lg` breakpoint. Customer and staff portals are
+  still stub landing pages (their real flows come in later phases), but
+  login/register and role-based redirect work for all three roles.
 
 ## Quickest path — Docker only
 
@@ -92,21 +97,23 @@ cd apps/web && npm run dev
 ## Project structure
 
 ```
-apps/web/                Next.js 14 frontend
-  app/login/              Login page
-  app/admin/               Admin portal (layout + Overview/Users/Products/Policies/Audit)
-  app/customer/, app/staff/  Stub landing pages for those roles
-  lib/api.ts               Typed fetch client for the FastAPI backend
-  lib/auth-context.tsx      Auth state (token + user), login/logout
+apps/web/                 Next.js 14 frontend
+  app/login/, app/register/  Split-panel auth pages (AuthShell component)
+  app/admin/                  Admin portal (layout + Overview/Users/Products/Policies/Audit)
+  app/customer/, app/staff/    Stub landing pages for those roles
+  components/ui/               Shared UI kit — Button, Input/Field/Select, Card, Badge, Modal, Toast, Skeleton
+  components/icons.tsx          Small dependency-free inline SVG icon set
+  lib/api.ts                    Typed fetch client for the FastAPI backend
+  lib/auth-context.tsx           Auth state (token + user), login/register/logout
 
-services/api/             FastAPI backend
-  app/models/               SQLAlchemy models — all 16 tables
-  app/schemas/               Pydantic request/response schemas
-  app/api/routes/             auth.py, admin.py
-  app/core/                   config, JWT + password hashing, role-check dependency
-  app/db/                     session, declarative base, EncryptedString custom type
-  migrations/                Alembic — includes the generated initial migration
-  scripts/seed.py            Default data + demo logins
+services/api/              FastAPI backend
+  app/models/                SQLAlchemy models — all 16 tables
+  app/schemas/                 Pydantic request/response schemas
+  app/api/routes/                auth.py, admin.py (includes POST /admin/staff)
+  app/core/                       config, JWT + password hashing, role-check dependency
+  app/db/                          session, declarative base, EncryptedString custom type
+  migrations/                     Alembic — includes the generated initial migration
+  scripts/seed.py                 Default data + demo logins
 ```
 
 ## Security notes (read before this leaves your laptop)

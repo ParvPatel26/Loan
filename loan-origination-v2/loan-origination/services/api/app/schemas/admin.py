@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 
 class BankOut(BaseModel):
@@ -57,3 +57,10 @@ class DashboardStats(BaseModel):
     total_banks: int
     total_loan_products: int
     total_applications: int
+
+
+class CreateStaffRequest(BaseModel):
+    email: EmailStr
+    password: str
+    full_name: str
+    bank_id: uuid.UUID

@@ -8,6 +8,7 @@ interface AuthState {
   user: UserOut | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<UserOut>;
+  register: (email: string, password: string, fullName: string) => Promise<UserOut>;
   logout: () => void;
 }
 
@@ -43,6 +44,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return res.user;
   }
 
+  async function register(email: string, password: string, fullName: string) {
+    const res = await api.register(email, password, fullName);
+    window.localStorage.setItem("lo_token", res.access_token);
+    setToken(res.access_token);
+    setUser(res.user);
+    return res.user;
+  }
+
   function logout() {
     window.localStorage.removeItem("lo_token");
     setToken(null);
@@ -50,7 +59,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ token, user, loading, login, logout }}>{children}</AuthContext.Provider>
+    <AuthContext.Provider value={{ token, user, loading, login, register, logout }}>
+      {children}
+    </AuthContext.Provider>
   );
 }
 
