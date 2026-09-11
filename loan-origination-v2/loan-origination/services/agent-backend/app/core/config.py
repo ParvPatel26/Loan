@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     # deployment serves one bank's products, like a bank's own branded
     # assistant, rather than browsing a cross-bank marketplace.
     platform_bank_id: str = ""
+    # Falls back to this stable bank code when platform_bank_id is blank —
+    # avoids needing to hand-update a UUID every time the DB is reseeded.
+    platform_bank_code: str = "FNB001"
 
     langgraph_db_url: str = "postgresql://postgres:admin@localhost:5432/loan_origination"
     app_database_url: str = "postgresql+asyncpg://postgres:admin@localhost:5432/loan_origination"    

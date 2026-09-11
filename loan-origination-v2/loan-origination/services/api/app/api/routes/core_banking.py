@@ -23,6 +23,7 @@ from app.core.deps import require_service_api_key
 from app.core.lending_logic import route_loan_decision
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
+from app.models.bank import Bank
 from app.models.enums import UserRole
 from app.models.loan_application import LoanApplication
 from app.models.loan_product import LoanProduct
@@ -78,6 +79,18 @@ def _product_to_dict(p: LoanProduct) -> dict:
         "max_lvr": p.max_lvr,
         "features": p.features or [],
     }
+
+
+@router.get("/banks/by-code/{code}")
+async def get_bank_by_code(code: str, db: AsyncSession = Depends(get_db)):
+    """Resolves a bank's id from its stable code (e.g. 'FNB001') — lets
+    services/agent-backend avoid hardcoding a bank_id UUID that changes
+    every time the database is wiped and reseeded."""
+    result = await db.execute(select(Bank).where(Bank.code == code))
+    bank = result.scalar_one_or_none()
+    if bank is None:
+        raise HTTPException(404, f"Bank with code '{code}' not found")
+    return {"id": str(bank.id), "name": bank.name, "code": bank.code}
 
 
 async def _active_products(db: AsyncSession, bank_id: uuid.UUID) -> list[LoanProduct]:

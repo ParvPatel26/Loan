@@ -45,16 +45,32 @@ class CatalogClient(_BaseClient):
     def __init__(self) -> None:
         s = get_settings()
         super().__init__(s.catalog_base_url, s.catalog_api_key, s.catalog_timeout)
-        self._default_bank_id = s.platform_bank_id
+        self._configured_bank_id = s.platform_bank_id or None
+        self._bank_code = s.platform_bank_code
+        self._resolved_bank_id: str | None = None
+
+    async def _default_bank_id_async(self) -> str:
+        """Resolves the platform's default bank id. Prefers an explicit
+        platform_bank_id if one is configured; otherwise looks it up by the
+        stable bank code (set once, in seed.py) so this never goes stale
+        when the database is wiped and reseeded with fresh random ids."""
+        if self._configured_bank_id:
+            return self._configured_bank_id
+        if not self._resolved_bank_id:
+            data = await self._get(f"/api/v1/banks/by-code/{self._bank_code}")
+            self._resolved_bank_id = data["id"]
+        return self._resolved_bank_id
 
     async def list_loan_types(self, bank_id: str | None = None) -> list[dict]:
-        data = await self._get("/api/v1/loan-types", params={"bank_id": bank_id or self._default_bank_id})
+        resolved = bank_id or await self._default_bank_id_async()
+        data = await self._get("/api/v1/loan-types", params={"bank_id": resolved})
         return data["loan_types"]
 
     async def list_products(
         self, loan_type: str | None = None, category: str | None = None, bank_id: str | None = None
     ) -> list[dict]:
-        params = {"bank_id": bank_id or self._default_bank_id}
+        resolved = bank_id or await self._default_bank_id_async()
+        params = {"bank_id": resolved}
         if loan_type:
             params["loan_type"] = loan_type
         if category:
@@ -63,9 +79,8 @@ class CatalogClient(_BaseClient):
         return data["products"]
 
     async def get_product(self, product_code: str, bank_id: str | None = None) -> dict:
-        return await self._get(
-            f"/api/v1/products/{product_code}", params={"bank_id": bank_id or self._default_bank_id}
-        )
+        resolved = bank_id or await self._default_bank_id_async()
+        return await self._get(f"/api/v1/products/{product_code}", params={"bank_id": resolved})
 
     async def submit_application(
         self,
