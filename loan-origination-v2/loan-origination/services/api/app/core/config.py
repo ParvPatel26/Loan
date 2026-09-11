@@ -12,6 +12,10 @@ class Settings(BaseSettings):
     #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
     # and set FERNET_KEY in .env for anything beyond local dev.
     fernet_key: str = "oQnhLA65tI_WbXmC9ktjprWzawU5zrO1eVVRRxPjFvU="
+    # Shared secret for server-to-server callers (e.g. the chat-agent backend
+    # reading the product catalog, or posting a completed application back).
+    # Dev-only default — set SERVICE_API_KEY in .env for anything beyond local dev.
+    service_api_key: str = "dev-service-key-change-me"
 
 
 settings = Settings()

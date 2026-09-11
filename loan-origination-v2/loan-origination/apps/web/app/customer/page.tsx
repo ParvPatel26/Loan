@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { api, type LoanProductOut, type LoanApplicationOut, ApiError } from "@/lib/api";
@@ -123,9 +124,30 @@ export default function CustomerPortal() {
           </Button>
         </div>
 
-        <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-5">
+        <Card className="mt-8 flex flex-col items-start gap-4 border-indigo-100 bg-gradient-to-br from-indigo-50 to-white p-5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white">
+              <IconSparkle className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">Prefer to just talk it through?</h2>
+              <p className="mt-0.5 text-sm text-slate-500">
+                Our loan assistant asks the questions one at a time, checks your documents, and submits the
+                application for you — no form required.
+              </p>
+            </div>
+          </div>
+          <Link href="/customer/chat" className="shrink-0">
+            <Button>
+              Chat with the assistant
+              <IconArrowRight className="h-4 w-4" />
+            </Button>
+          </Link>
+        </Card>
+
+        <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-5">
           <Card className="p-5 lg:col-span-3">
-            <h2 className="text-sm font-semibold text-slate-900">Apply for a loan</h2>
+            <h2 className="text-sm font-semibold text-slate-900">Or apply with a quick form</h2>
             <p className="mt-1 text-sm text-slate-500">
               Pick a product and tell us how much you need — we&apos;ll check it against the bank&apos;s
               policy right away.

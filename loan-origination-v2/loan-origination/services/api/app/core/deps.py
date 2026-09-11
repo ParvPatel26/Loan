@@ -1,11 +1,12 @@
 import uuid
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, Header, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.security import decode_access_token
 from app.db.session import get_db
 from app.models.bank_position import BankPosition
@@ -13,6 +14,14 @@ from app.models.enums import UserRole
 from app.models.user import User
 
 bearer_scheme = HTTPBearer(auto_error=False)
+
+
+async def require_service_api_key(x_api_key: str | None = Header(default=None)) -> None:
+    """Guards server-to-server endpoints (e.g. the chat-agent backend reading
+    the catalog or posting a completed application) with a shared secret,
+    the same pattern agent-backend already uses for mock_core_banking."""
+    if x_api_key != settings.service_api_key:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or missing API key")
 
 
 async def get_current_user(

@@ -17,6 +17,7 @@ class BankOut(BaseModel):
 class LoanProductOut(BaseModel):
     id: uuid.UUID
     bank_id: uuid.UUID
+    product_code: str | None
     product_type: str
     name: str
     min_amount: float

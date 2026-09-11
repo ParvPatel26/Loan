@@ -1,9 +1,13 @@
-# Loan Origination Platform — v4 (bank hierarchy, self-service staff, auto-approval routing)
+# Loan Origination Platform — v5 (chat agent: conversational intake, document OCR, Five C's assessment)
 
-Full-stack build: Next.js frontend, FastAPI backend, PostgreSQL database with
-the complete 16-table schema (plus this version's two new tables), JWT auth,
-a polished responsive UI, and three working portals — Admin, Bank staff, and
-Customer — all backed by real data.
+Full-stack build: Next.js frontend, FastAPI backend, PostgreSQL database, JWT
+auth, a polished responsive UI, and three working portals — Admin, Bank
+staff, and Customer — all backed by real data. As of v5 the customer portal
+also offers a real conversational intake flow (`/customer/chat`), backed by
+a separate LangGraph chat-agent service that does genuine document OCR and
+Five C's credit assessment, converging on the same deterministic
+auto-approval/escalation routing as the plain form. See "What's new in v5"
+below.
 
 ## What's new in v4
 
@@ -64,6 +68,52 @@ Customer — all backed by real data.
 - Two new tables: `bank_positions` and `notifications`, plus new columns
   (`users.position_id`, `escalations.escalated_to_position_id`) — see
   `migrations/versions/e80fc8b39b2c_bank_hierarchy_and_notifications.py`.
+
+## What's new in v5 — the chat agent
+
+The plain "Apply for a loan" form is now joined by a real conversational
+intake flow at **`/customer/chat`** ("Chat with the assistant" on the
+customer portal), backed by a separate service, `services/agent-backend` —
+a LangGraph-based agent doing genuine discovery chat, structured interview,
+Gemini-vision document OCR, and a real Five C's credit assessment (capacity,
+capital, character, collateral, conditions), not a toy stub. It runs on its
+own port (8001) and its own Postgres schemas inside the same database, and
+hands every completed interview into the *same* `route_loan_decision` the
+plain form uses — so a chat-submitted application shows up for staff exactly
+like any other, correctly auto-approved or escalated and notified.
+
+`services/api` gained a small `/api/v1/...` router
+(`app/api/routes/core_banking.py`) that the agent reads the product catalog
+from and submits completed applications to, authenticated with a shared
+`SERVICE_API_KEY` rather than a user JWT (server-to-server). `loan_products`
+gained a few columns (`product_code`, `secured`, `rate_type`,
+`comparison_rate`, `establishment_fee`, `max_lvr`, `features`) so this
+platform's own table can fully satisfy that catalog contract on its own —
+see migration `0f8bc6a836fe`.
+
+Full details — why it's a separate service, how identity and the product
+catalog are bridged, and what's still split across the two systems — are in
+the project's `db-schema-design.md` (§8, "v5 — the chat agent integration").
+Quick facts worth knowing before you run it:
+
+- **Four services now**, not two: `services/api` (8000), `services/agent-backend`
+  (8001), `services/agent-backend`'s bundled `mock_core_banking` (9000, still
+  serves document-requirement checklists / HEM policy / Five C's rules —
+  assessment configuration, kept separate from the staff-managed catalog),
+  and `apps/web` (3000). See "Running the chat agent" below.
+- **Needs a Gemini API key.** The chat, document OCR and assessment agents
+  call Google's Gemini API (`GEMINI_API_KEY` in `services/agent-backend/.env`)
+  — without a working key (and network access to
+  `generativelanguage.googleapis.com`), the plain form still works fine, but
+  `/customer/chat` will show connection errors past the opening greeting.
+- **One bank per chat deployment (for now).** `PLATFORM_BANK_ID` in
+  `services/agent-backend/.env` picks which bank's catalog the assistant
+  offers — like a bank's own branded assistant, not a cross-bank
+  marketplace. Multi-bank chat is a natural next step, not a redesign.
+- Signing in with a customer account and using the chat ties the resulting
+  application to that real account; you can also use the chat signed out to
+  explore discovery/interview, but submitting a real application requires
+  being signed in as a customer.
 
 ## Quickest path — Docker only
 
@@ -149,6 +199,37 @@ cd services/api && uvicorn app.main:app --reload
 cd apps/web && npm run dev
 ```
 
+## Running the chat agent (`services/agent-backend`)
+
+Optional but needed for `/customer/chat` — the plain form works without it.
+
+```bash
+cd services/agent-backend
+python -m venv venv && source venv/bin/activate   # or venv\Scripts\activate on Windows
+pip install -r requirements.txt
+cp .env.example .env   # fill in GEMINI_API_KEY, and PLATFORM_BANK_ID with a real bank's id
+                        # from `select id, name from banks;` — CATALOG_API_KEY must match
+                        # services/api's SERVICE_API_KEY (same dev default if you haven't changed it)
+```
+
+Run each service's migrations (they share the one Postgres database, in
+their own schemas, so this only needs doing once each):
+```bash
+alembic -c mock_core_banking/alembic.ini upgrade head
+alembic -c app/alembic.ini upgrade head
+python -m mock_core_banking.seed          # document requirements, HEM/shading policy
+python -m mock_core_banking.seed_rules    # Five C's rules
+```
+
+Then run the two extra services (two more terminals):
+```bash
+cd services/agent-backend && python -m uvicorn mock_core_banking.main:app --port 9000
+cd services/agent-backend && python run.py   # the agent itself, port 8001
+```
+
+Set `NEXT_PUBLIC_AGENT_API_URL=http://localhost:8001` in `apps/web/.env.local`
+(see `.env.local.example`) so the frontend knows where to find it.
+
 ## Project structure
 
 ```
@@ -162,6 +243,8 @@ apps/web/                 Next.js 14 frontend
     applications/                 All applications submitted to the bank
     notifications/                 Position-targeted alerts, mark-as-read
   app/customer/               Apply-for-a-loan form + "My applications" list
+  app/customer/chat/          Chat UI for the conversational intake flow (talks to agent-backend)
+  lib/agent-api.ts            Typed fetch client for services/agent-backend (separate from lib/api.ts)
   components/ui/               Shared UI kit — Button, Input/Field/Select, Card, Badge, Modal, Toast, Skeleton
   components/icons.tsx          Small dependency-free inline SVG icon set
   lib/api.ts                    Typed fetch client for the FastAPI backend
@@ -175,8 +258,17 @@ services/api/              FastAPI backend
   app/core/                       config, JWT + password hashing, deps.py (role/permission checks),
                                     lending_logic.py (auto-approve/escalate routing)
   app/db/                          session, declarative base, EncryptedString custom type
-  migrations/                     Alembic — init + bank-hierarchy-and-notifications
+  migrations/                     Alembic — init + bank-hierarchy-and-notifications + v5 catalog-contract fields
   scripts/seed.py                 Default data, demo logins, and the position ladder
+
+services/agent-backend/    LangGraph chat agent — discovery/interview, document OCR, Five C's assessment
+  app/agents/                 interaction/ (discovery + interview graphs), document/ (OCR + reconcile),
+                                assessment/ (Five C's metrics + rules engine)
+  app/api/                     interview.py (chat turns + /submit bridge), documents.py, assessment.py
+  app/services/core_banking.py  CatalogClient (→ services/api) + AssessmentConfigClient (→ mock_core_banking)
+  app/core/identity.py          Validates services/api's JWT to tie a session to a real customer
+  mock_core_banking/            Bundled service — document-requirement checklists, HEM/shading policy, rules
+  app/alembic/, mock_core_banking/alembic/   Separate migration chains for the two schemas this service owns
 ```
 
 ## Security notes (read before this leaves your laptop)
@@ -199,13 +291,19 @@ services/api/              FastAPI backend
 
 ## Roadmap
 
-This covers Phases 1–3 (scaffold, real schema + migration, auth), Phase 5
-(Admin portal UI), and now a first pass at Phase 4/7 (plain-CRUD loan
-application flow, wired to deterministic auto-approval/escalation routing
-and position-based notifications). Still ahead: Phase 6 (the LangGraph
-multi-agent layer — a conversational Loan Broker agent for intake, a
-Document Intelligence agent for OCR/verification, a Credit Bureau
-integration agent, and a Decision Agent that wraps today's deterministic
-`route_loan_decision` with LLM-assisted reasoning), Phase 8 (AI
-configuration and integrations actually being written to by the app, not
-just displayed), and document upload/verification (FR5/FR6).
+Phases 1–3 (scaffold, real schema + migration, auth) and Phase 5 (Admin
+portal UI) are done. Phase 4/7 (loan application flow, deterministic
+auto-approval/escalation routing, position-based notifications) has two
+front doors now — the plain form and the chat agent — both converging on
+the same routing. Phase 6 (the LangGraph multi-agent layer: conversational
+intake, document OCR/verification, a Five C's credit assessment, a rules
+engine) is built and running as `services/agent-backend` (v5) — see "What's
+new in v5" above and `db-schema-design.md` §8 for the integration details
+and what's still split across the two systems. Still ahead: Phase 8 (AI
+configuration and integrations actually being written to by the app), a
+real external credit bureau (the Five C's assessment today uses declared +
+OCR'd document data, not a bureau pull — the adapter is built to be
+swappable, per the standing decision to keep that interface clean), and
+mirroring the chat agent's Five C's results into this platform's own
+`credit_assessments` table so staff can see the full assessment breakdown
+next to an escalated application, not just the routing outcome.

@@ -1,0 +1,267 @@
+import uuid
+
+import httpx
+from fastapi import APIRouter, Header, HTTPException, Request
+from langgraph.types import Command
+
+from app.agents.interaction.resolver import progress as compute_progress
+from app.api.schemas import (
+    ApplicationResponse,
+    MessageRequest,
+    Progress,
+    SlotHint,
+    StartRequest,
+    TurnResponse,
+)
+from app.core.config import get_settings
+from app.core.identity import get_customer_id_from_token
+from app.services.core_banking import core_banking
+from app.services.operational import (
+    ensure_application,
+    get_applicant_id,
+    get_bank_id,
+    mirror_transcript,
+    mirror_turn,
+    record_platform_submission,
+    set_application_product,
+)
+
+router = APIRouter(prefix="/api/v1/applications", tags=["interview"])
+
+def _discovery_config(session_id: str) -> dict:
+    return {"configurable": {"thread_id": f"{session_id}:discovery"}}
+
+
+def _interview_config(session_id: str) -> dict:
+    return {"configurable": {"thread_id": f"{session_id}:interview"}}
+
+def _hints(batch: list[dict]) -> list[SlotHint]:
+    return [
+        SlotHint(id=s["id"], label=s["label"], type=s["type"], options=s.get("options"))
+        for s in batch
+    ]
+
+
+def _interrupt_payload(result: dict) -> dict | None:
+    interrupts = result.get("__interrupt__")
+    return interrupts[0].value if interrupts else None
+
+
+async def _resolve_stage(request: Request, session_id: str) -> str | None:
+    interview_snapshot = await request.app.state.interview_graph.aget_state(
+        _interview_config(session_id)
+    )
+    if interview_snapshot.values:
+        return "complete" if not interview_snapshot.next else "interview"
+
+    discovery_snapshot = await request.app.state.discovery_graph.aget_state(
+        _discovery_config(session_id)
+    )
+    if discovery_snapshot.values:
+        return "discovery"
+
+    return None
+
+
+async def _load_schema(product_code: str, bank_id: str) -> dict:
+    try:
+        return await core_banking.get_product_requirements(product_code, bank_id=bank_id)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 404:
+            raise HTTPException(404, f"Unknown product '{product_code}'")
+        raise HTTPException(502, "Core banking API error") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(503, "Core banking API unavailable") from exc
+
+
+async def _start_interview(request: Request, session_id: str, product_code: str) -> TurnResponse:
+    interview_graph = request.app.state.interview_graph
+    bank_id = await get_bank_id(session_id)
+    schema = await _load_schema(product_code, bank_id)
+    await set_application_product(session_id, product_code)
+
+    result = await interview_graph.ainvoke(
+        {
+            "product_code": schema["product_code"],
+            "schema_version": schema["schema_version"],
+            "slots": schema["slots"],
+            "turn": 0,
+        },
+        _interview_config(session_id),
+    )
+    return await _interview_turn(request, session_id, result)
+
+
+async def _interview_turn(request: Request, session_id: str, result: dict) -> TurnResponse:
+    interview_graph = request.app.state.interview_graph
+    snapshot = await interview_graph.aget_state(_interview_config(session_id))
+    values = snapshot.values
+    payload = _interrupt_payload(result)
+    complete = payload is None
+
+    await mirror_turn(session_id, values, complete)
+
+    return TurnResponse(
+        session_id=session_id,
+        stage="complete" if complete else "interview",
+        question=payload.get("question") if payload else None,
+        slots_in_play=_hints(values.get("current_batch") or []) if payload else [],
+        progress=Progress(
+            **compute_progress(values["slots"], values.get("filled") or {})
+        ),
+        complete=complete,
+        escalated=bool(values.get("escalate")),
+        product_code=values.get("product_code"),
+    )
+
+
+async def _discovery_turn(request: Request, session_id: str, result: dict) -> TurnResponse:
+    discovery_graph = request.app.state.discovery_graph
+    payload = _interrupt_payload(result)
+
+    snapshot = await discovery_graph.aget_state(_discovery_config(session_id))
+    await mirror_transcript(session_id, snapshot.values.get("transcript") or [], snapshot.values.get("turn"))
+
+    if payload is None:
+        # Discovery finished — hand off to the interview.
+        product_code = snapshot.values.get("product_code")
+        if not product_code:
+            raise HTTPException(500, "Discovery ended without a product")
+        return await _start_interview(request, session_id, product_code)
+
+    return TurnResponse(
+        session_id=session_id,
+        stage=payload.get("stage", "discovery"),
+        question=payload.get("question"),
+        complete=False,
+    )
+
+
+@router.post("", response_model=TurnResponse)
+async def start_application(
+    request: Request, body: StartRequest, authorization: str | None = Header(default=None)
+) -> TurnResponse:
+    session_id = str(uuid.uuid4())
+    bank_id = body.bank_id or get_settings().platform_bank_id
+    if not bank_id:
+        raise HTTPException(
+            500,
+            "No bank configured for this chat session — set PLATFORM_BANK_ID in .env "
+            "or pass bank_id when starting the application.",
+        )
+    applicant_id = get_customer_id_from_token(authorization)
+    await ensure_application(session_id, bank_id=bank_id, applicant_id=applicant_id)
+
+    if body.product_code:
+        return await _start_interview(request, session_id, body.product_code)
+
+    discovery_graph = request.app.state.discovery_graph
+    bank_id = await get_bank_id(session_id)
+    result = await discovery_graph.ainvoke({"turn": 0, "bank_id": bank_id}, _discovery_config(session_id))
+    return await _discovery_turn(request, session_id, result)
+
+
+async def _check_ownership(session_id: str, authorization: str | None) -> None:
+    token_customer_id = get_customer_id_from_token(authorization)
+    owner_id = await get_applicant_id(session_id)
+    if owner_id and token_customer_id and owner_id != token_customer_id:
+        raise HTTPException(403, "This application belongs to a different customer")
+
+
+@router.post("/{session_id}/messages", response_model=TurnResponse)
+async def send_message(
+    request: Request, session_id: str, body: MessageRequest, authorization: str | None = Header(default=None)
+) -> TurnResponse:
+    await _check_ownership(session_id, authorization)
+    stage = await _resolve_stage(request, session_id)
+    if stage is None:
+        raise HTTPException(404, "Unknown session")
+    if stage == "complete":
+        raise HTTPException(409, "This application is already complete")
+
+    if stage == "discovery":
+        graph, config = request.app.state.discovery_graph, _discovery_config(session_id)
+        result = await graph.ainvoke(Command(resume=body.message), config)
+        return await _discovery_turn(request, session_id, result)
+
+    graph, config = request.app.state.interview_graph, _interview_config(session_id)
+    result = await graph.ainvoke(Command(resume=body.message), config)
+    return await _interview_turn(request, session_id, result)
+
+
+@router.post("/{session_id}/submit")
+async def submit_application(
+    request: Request, session_id: str, authorization: str | None = Header(default=None)
+) -> dict:
+    """Hands a completed interview into the main platform's real loan
+    pipeline. A deliberate, explicit action (not automatic the moment the
+    interview finishes) — like any loan application, the customer should
+    confirm before it becomes a binding submission staff will act on."""
+    await _check_ownership(session_id, authorization)
+    stage = await _resolve_stage(request, session_id)
+    if stage is None:
+        raise HTTPException(404, "Unknown session")
+    if stage != "complete":
+        raise HTTPException(409, "The interview isn't complete yet")
+
+    applicant_id = get_customer_id_from_token(authorization) or await get_applicant_id(session_id)
+    if not applicant_id:
+        raise HTTPException(401, "Sign in as a customer to submit this application")
+
+    interview_graph = request.app.state.interview_graph
+    snapshot = await interview_graph.aget_state(_interview_config(session_id))
+    values = snapshot.values
+    filled = values.get("filled") or {}
+    product_code = values.get("product_code")
+    if not product_code or "loan_amount" not in filled or "loan_term_months" not in filled:
+        raise HTTPException(409, "Missing required loan details — the interview may not be complete")
+
+    bank_id = await get_bank_id(session_id)
+    purpose = filled.get("purpose_detail") or filled.get("loan_purpose")
+
+    try:
+        result = await core_banking.catalog.submit_application(
+            bank_id=bank_id,
+            applicant_id=applicant_id,
+            product_code=product_code,
+            requested_amount=float(filled["loan_amount"]),
+            tenure_requested_months=int(filled["loan_term_months"]),
+            purpose=str(purpose) if purpose else None,
+            external_reference=session_id,
+        )
+    except httpx.HTTPStatusError as exc:
+        detail = exc.response.text
+        raise HTTPException(502, f"The bank rejected this application: {detail}") from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(503, "The bank's application service is unavailable") from exc
+
+    await record_platform_submission(session_id, result["application_id"], result["status"])
+    return result
+
+
+@router.get("/{session_id}", response_model=ApplicationResponse)
+async def get_application(
+    request: Request, session_id: str, authorization: str | None = Header(default=None)
+) -> ApplicationResponse:
+    await _check_ownership(session_id, authorization)
+    stage = await _resolve_stage(request, session_id)
+    if stage is None:
+        raise HTTPException(404, "Unknown session")
+    if stage == "discovery":
+        raise HTTPException(409, "No application yet — still choosing a product")
+
+    interview_graph = request.app.state.interview_graph
+    snapshot = await interview_graph.aget_state(_interview_config(session_id))
+    values = snapshot.values
+
+    return ApplicationResponse(
+        session_id=session_id,
+        product_code=values.get("product_code", ""),
+        schema_version=values.get("schema_version", ""),
+        progress=Progress(
+            **compute_progress(values["slots"], values.get("filled") or {})
+        ),
+        filled=values.get("filled") or {},
+        provenance=values.get("provenance") or {},
+        transcript=values.get("transcript") or [],
+    )

@@ -13,7 +13,7 @@ from app.models.enums import UserRole
 from app.models.escalation import Escalation
 from app.models.lending_policy import LendingPolicy
 from app.models.loan_application import LoanApplication
-from app.models.loan_product import LoanProduct
+from app.models.loan_product import LoanProduct, generate_product_code
 from app.models.notification import Notification
 from app.models.user import User
 from app.schemas.admin import LendingPolicyOut, LoanProductOut
@@ -153,6 +153,7 @@ async def create_bank_product(
     product = LoanProduct(bank_id=actor.bank_id, **payload.model_dump())
     db.add(product)
     await db.flush()
+    product.product_code = generate_product_code(product.product_type, product.id)
     db.add(
         AuditLog(
             entity_type="loan_product",
