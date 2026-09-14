@@ -18,6 +18,10 @@ services:
       JWT_SECRET: dev-secret-change-me
       JWT_ALGORITHM: HS256
       ACCESS_TOKEN_EXPIRE_MINUTES: "60"
+      # Inside the Docker network, agent-backend is reached by service name
+      # on its internal port (8000), not the host-mapped 8001 — used by the
+      # staff "view chat report" proxy (GET /bank/loan-applications/{id}/chat-report).
+      AGENT_BACKEND_BASE_URL: http://agent-backend:8000
     depends_on:
       - db
     ports:
@@ -50,9 +54,9 @@ services:
       APP_DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/loan_origination
       CORE_BANKING_BASE_URL: http://mock-core-banking:9000
       CATALOG_BASE_URL: http://api:8000
-      # Overrides the .env's stale value — this is the bank id that actually
-      # has active loan_products (see `select b.id, b.name, count(lp.id) ...`).
-      PLATFORM_BANK_ID: fe899621-3be6-42a4-9e45-7ac4b03410e3
+      # Blank so it falls back to resolving by bank code (FNB001) instead
+      # of the .env's stale hardcoded id — see CatalogClient._default_bank_id_async.
+      PLATFORM_BANK_ID: ""
     depends_on:
       - db
       - api

@@ -8,11 +8,13 @@ export function Modal({
   onClose,
   title,
   children,
+  widthClassName = "sm:max-w-md",
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: React.ReactNode;
+  widthClassName?: string;
 }) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -29,7 +31,7 @@ export function Modal({
       <div
         role="dialog"
         aria-modal="true"
-        className="max-h-[90vh] w-full overflow-y-auto rounded-t-2xl bg-white shadow-xl sm:max-w-md sm:rounded-2xl"
+        className={`max-h-[90vh] w-full overflow-y-auto rounded-t-2xl bg-white shadow-xl sm:rounded-2xl ${widthClassName}`}
       >
         <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
           <h2 className="text-sm font-semibold text-slate-900">{title}</h2>

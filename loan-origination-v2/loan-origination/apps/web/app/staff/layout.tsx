@@ -46,9 +46,9 @@ function StaffShell({ children, fullName }: { children: React.ReactNode; fullNam
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 lg:flex">
+    <div className="min-h-screen bg-slate-50 lg:flex print:block print:bg-white">
       {/* Mobile top bar */}
-      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 lg:hidden">
+      <div className="flex items-center justify-between border-b border-slate-200 bg-white px-4 py-3 lg:hidden print:hidden">
         <div className="flex items-center gap-2">
           <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-sky-600 text-white">
             <IconSparkle className="h-4 w-4" />
@@ -82,7 +82,7 @@ function StaffShell({ children, fullName }: { children: React.ReactNode; fullNam
       <aside
         className={`${
           menuOpen ? "block" : "hidden"
-        } lg:flex lg:sticky lg:top-0 lg:h-screen w-full lg:w-64 shrink-0 flex-col border-b lg:border-b-0 lg:border-r border-slate-200 bg-white`}
+        } lg:flex lg:sticky lg:top-0 lg:h-screen w-full lg:w-64 shrink-0 flex-col border-b lg:border-b-0 lg:border-r border-slate-200 bg-white print:hidden`}
       >
         <div className="hidden items-center gap-2 px-6 py-5 lg:flex">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-600 text-white">
@@ -139,8 +139,8 @@ function StaffShell({ children, fullName }: { children: React.ReactNode; fullNam
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 p-4 sm:p-6 lg:p-10">
-        <div className="mx-auto max-w-6xl">{children}</div>
+      <main className="min-w-0 flex-1 p-4 sm:p-6 lg:p-10 print:p-0">
+        <div className="mx-auto max-w-6xl print:max-w-none">{children}</div>
       </main>
     </div>
   );

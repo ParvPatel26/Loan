@@ -26,6 +26,11 @@ class LoanApplication(Base):
     assigned_staff_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
     )
+    # The agent-backend chat session (its Application.id) this application was
+    # submitted from, when it came in via the chat assistant rather than the
+    # plain apply form — null for form submissions. Lets staff pull up the
+    # full interview/assessment/document report (see routes/bank.py).
+    chat_session_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

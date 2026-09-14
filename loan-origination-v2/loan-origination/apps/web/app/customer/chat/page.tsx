@@ -16,7 +16,7 @@ import { useToast } from "@/components/ui/Toast";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { IconArrowRight, IconCheck, IconClipboard, IconSparkle } from "@/components/icons";
+import { IconArrowRight, IconCheck, IconClipboard, IconPaperclip, IconSparkle } from "@/components/icons";
 
 type ChatMessage = { role: "agent" | "user"; text: string };
 
@@ -38,6 +38,7 @@ export default function LoanAssistantChat() {
 
   const [requiredDocs, setRequiredDocs] = useState<RequiredDocument[] | null>(null);
   const [uploadingCode, setUploadingCode] = useState<string | null>(null);
+  const [attaching, setAttaching] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<SubmitResult | null>(null);
@@ -132,6 +133,39 @@ export default function LoanAssistantChat() {
       show(message, "error");
     } finally {
       setUploadingCode(null);
+    }
+  }
+
+  async function handleQuickAttach(file: File) {
+    if (!sessionId) return;
+    setAttaching(true);
+    try {
+      const result = await agentApi.uploadNextDocument(token, sessionId, file);
+      if (result.status === "needs_reupload") {
+        show(result.reason || `${file.name} doesn't look right — try a different file`, "error");
+      } else {
+        show(`${result.verification_type.replace(/_/g, " ")} uploaded`, "success");
+      }
+      setMessages((m) => [
+        ...m,
+        { role: "user", text: `📎 ${file.name}` },
+        {
+          role: "agent",
+          text:
+            result.status === "needs_reupload"
+              ? result.reason || "That document doesn't look right — mind trying a different file?"
+              : "Got it, thanks — that's on file.",
+        },
+      ]);
+      if (stage === "complete") {
+        const refreshed = await agentApi.requiredDocuments(token, sessionId);
+        setRequiredDocs(refreshed.documents);
+      }
+    } catch (err) {
+      const message = err instanceof AgentApiError ? err.message : "Couldn't attach that file";
+      show(message, "error");
+    } finally {
+      setAttaching(false);
     }
   }
 
@@ -243,6 +277,26 @@ export default function LoanAssistantChat() {
 
           {stage !== "complete" && (
             <form onSubmit={handleSubmitTurn} className="flex items-center gap-2 border-t border-slate-100 p-3">
+              <label
+                title={productCode ? "Attach a document" : "Choose a loan product first"}
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 text-slate-500 transition-colors ${
+                  !sessionId || !productCode || attaching
+                    ? "cursor-not-allowed opacity-40"
+                    : "cursor-pointer hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-600"
+                }`}
+              >
+                <input
+                  type="file"
+                  className="hidden"
+                  disabled={!sessionId || !productCode || attaching}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleQuickAttach(file);
+                    e.target.value = "";
+                  }}
+                />
+                <IconPaperclip className="h-4.5 w-4.5" />
+              </label>
               <input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}

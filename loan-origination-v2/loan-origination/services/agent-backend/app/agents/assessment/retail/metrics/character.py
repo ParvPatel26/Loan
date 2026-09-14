@@ -18,7 +18,10 @@ CHARACTER_METRIC_NAMES = [
 
 def assess_character(filled: dict[str, Any]) -> dict[str, Metric]:
     """No bureau integration exists yet. Every metric is honestly
-    unavailable rather than guessed or defaulted."""
+    unavailable rather than guessed or defaulted — except credit_score,
+    which run.py overrides with a clearly-labeled mock estimate (see
+    bureau_mock.mock_credit_score) rather than leaving it permanently
+    blank."""
     return {
         name: Metric(value=None, state=MetricState.UNAVAILABLE, channel=Channel.BUREAU)
         for name in CHARACTER_METRIC_NAMES

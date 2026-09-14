@@ -161,6 +161,14 @@ export function IconLock({ className }: IconProps) {
   );
 }
 
+export function IconPaperclip({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={base} strokeLinecap="round" strokeLinejoin="round" className={className}>
+      <path d="M17.5 8.5l-7.6 7.6a3 3 0 004.24 4.24l8.3-8.3a5.5 5.5 0 00-7.78-7.78l-8.3 8.3a4 4 0 005.66 5.66l7.2-7.2" />
+    </svg>
+  );
+}
+
 export function IconClipboard({ className }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={base} strokeLinecap="round" strokeLinejoin="round" className={className}>

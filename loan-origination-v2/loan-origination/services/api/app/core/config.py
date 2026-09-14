@@ -16,6 +16,12 @@ class Settings(BaseSettings):
     # reading the product catalog, or posting a completed application back).
     # Dev-only default — set SERVICE_API_KEY in .env for anything beyond local dev.
     service_api_key: str = "dev-service-key-change-me"
+    # Where this platform reaches the chat-agent backend to pull a chat
+    # session's full interview/assessment/document report for staff (see
+    # routes/bank.py's chat-report proxy). Same shared service_api_key is
+    # sent as X-API-Key — agent-backend checks it against its own
+    # CATALOG_API_KEY, which is configured to the same value.
+    agent_backend_base_url: str = "http://localhost:8001"
 
 
 settings = Settings()

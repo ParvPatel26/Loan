@@ -159,6 +159,14 @@ class CoreBankingClient:
     async def get_product(self, product_code: str, bank_id: str = DEFAULT_BANK_ID) -> dict:
         return await self.catalog.get_product(product_code, bank_id=None if bank_id == DEFAULT_BANK_ID else bank_id)
 
+    async def resolve_default_bank_id(self) -> str:
+        """Resolves the platform's default bank id the same way catalog calls
+        already do — an explicit platform_bank_id if configured, otherwise by
+        the stable bank code (see CatalogClient._default_bank_id_async).
+        Needed wherever a bank id has to be known before any catalog call can
+        happen, e.g. starting a brand-new chat session."""
+        return await self.catalog._default_bank_id_async()
+
     async def get_product_requirements(self, product_code: str, bank_id: str = DEFAULT_BANK_ID) -> dict:
         """Interview slot schema for a product. Looks the product up in the
         catalog first (to learn its assessment-config loan_type), then asks

@@ -1,24 +1,30 @@
 import uuid
+from datetime import datetime, timezone
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.deps import get_current_staff, get_current_user, require_bank_permission
 from app.core.security import hash_password
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
 from app.models.bank_position import BankPosition
-from app.models.enums import UserRole
+from app.models.enums import DecisionResult, DecisionType, EscalationStatus, LoanStatus, UserRole
 from app.models.escalation import Escalation
 from app.models.lending_policy import LendingPolicy
 from app.models.loan_application import LoanApplication
+from app.models.loan_decision import LoanDecision
 from app.models.loan_product import LoanProduct, generate_product_code
 from app.models.notification import Notification
 from app.models.user import User
 from app.schemas.admin import LendingPolicyOut, LoanProductOut
 from app.schemas.auth import UserOut
 from app.schemas.bank import (
+    ApplicationDecisionRequest,
+    ApplicationDecisionOut,
     BankPositionOut,
     CreateBankStaffRequest,
     CreateLendingPolicyRequest,
@@ -224,6 +230,141 @@ async def list_bank_applications(staff: User = Depends(get_current_staff), db: A
         item.pending_position_title = position_by_app.get(app.id)
         out.append(item)
     return out
+
+
+@router.post("/loan-applications/{application_id}/decision", response_model=ApplicationDecisionOut)
+async def decide_loan_application(
+    application_id: uuid.UUID,
+    payload: ApplicationDecisionRequest,
+    staff: User = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db),
+):
+    """A staff member's manual approve/reject on an escalated application —
+    the human-review step at the end of route_loan_decision's ladder (see
+    app.core.lending_logic). Works the same for a chat-originated
+    application as for the plain form: both land in loan_applications and
+    go through the same escalation, so there's nothing chat-specific here."""
+    if payload.decision not in ("approved", "rejected"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="decision must be 'approved' or 'rejected'")
+
+    application = await db.get(LoanApplication, application_id)
+    if application is None or application.bank_id != staff.bank_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+    if application.status != LoanStatus.UNDER_REVIEW.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Application is '{application.status}', not awaiting a decision",
+        )
+
+    esc_result = await db.execute(
+        select(Escalation).where(
+            Escalation.application_id == application_id, Escalation.status == EscalationStatus.PENDING.value
+        )
+    )
+    escalation = esc_result.scalar_one_or_none()
+
+    # Only the position this was escalated to may act on it — unless the
+    # acting staff member holds a position with unlimited approval authority
+    # (max_approval_amount is None), which can act at any rung below it.
+    if escalation and escalation.escalated_to_position_id and staff.position_id != escalation.escalated_to_position_id:
+        staff_position = await db.get(BankPosition, staff.position_id) if staff.position_id else None
+        if staff_position is None or staff_position.max_approval_amount is not None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="This application is pending a different position's approval",
+            )
+
+    approved = payload.decision == "approved"
+    result = DecisionResult.APPROVED.value if approved else DecisionResult.REJECTED.value
+    application.status = LoanStatus.APPROVED.value if approved else LoanStatus.REJECTED.value
+
+    db.add(
+        LoanDecision(
+            application_id=application.id,
+            decision=result,
+            decision_type=DecisionType.MANUAL.value,
+            approved_amount=(payload.approved_amount or float(application.requested_amount)) if approved else None,
+            decided_by=staff.id,
+            decision_reason=payload.reason,
+        )
+    )
+
+    if escalation:
+        escalation.status = EscalationStatus.RESOLVED.value
+        escalation.resolved_at = datetime.now(timezone.utc)
+
+    db.add(
+        AuditLog(
+            entity_type="loan_application",
+            entity_id=str(application.id),
+            action=f"staff_{payload.decision}",
+            performed_by=staff.id,
+            after_state={"decision": payload.decision, "reason": payload.reason},
+        )
+    )
+    db.add(
+        Notification(
+            user_id=application.applicant_id,
+            title="Your loan application was approved" if approved else "Your loan application was declined",
+            message=(
+                f"Your ${float(application.requested_amount):,.0f} application was approved."
+                if approved
+                else f"Your ${float(application.requested_amount):,.0f} application was declined."
+            )
+            + (f" {payload.reason}" if payload.reason else ""),
+            entity_type="loan_application",
+            entity_id=str(application.id),
+        )
+    )
+
+    await db.commit()
+    await db.refresh(application)
+
+    return ApplicationDecisionOut(
+        application_id=application.id,
+        status=application.status,
+        decision=result,
+        decided_at=datetime.now(timezone.utc),
+    )
+
+
+@router.get("/loan-applications/{application_id}/chat-report")
+async def get_application_chat_report(
+    application_id: uuid.UUID,
+    staff: User = Depends(get_current_staff),
+    db: AsyncSession = Depends(get_db),
+):
+    """Proxies to the chat-agent backend for the full interview report
+    (transcript-derived slots, Five C's assessment, document checklist,
+    decision history) behind a chat-originated application — only staff at
+    the owning bank can view it, and only for applications that actually
+    came in through the chat assistant."""
+    application = await db.get(LoanApplication, application_id)
+    if application is None or application.bank_id != staff.bank_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Application not found")
+    if not application.chat_session_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="This application wasn't submitted via the chat assistant",
+        )
+
+    url = f"{settings.agent_backend_base_url}/api/v1/applications/{application.chat_session_id}/report"
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(url, headers={"X-API-Key": settings.service_api_key})
+        resp.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Chat assistant service returned an error: {exc.response.text}",
+        ) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Chat assistant service is unavailable",
+        ) from exc
+
+    return resp.json()
 
 
 @router.get("/notifications", response_model=list[NotificationOut])

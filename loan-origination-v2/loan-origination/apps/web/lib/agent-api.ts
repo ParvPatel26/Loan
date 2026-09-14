@@ -131,6 +131,18 @@ export const agentApi = {
     );
   },
 
+  // WhatsApp-style single attach button: no verification_type needed, the
+  // backend auto-picks the next not-yet-uploaded required document.
+  uploadNextDocument: (token: string | null, sessionId: string, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<UploadDocumentResult>(
+      `/api/v1/applications/${sessionId}/documents/next`,
+      { method: "POST", body: form },
+      token
+    );
+  },
+
   assessment: (token: string | null, sessionId: string) =>
     request<AssessmentResult>(`/api/v1/applications/${sessionId}/assessment`, {}, token),
 

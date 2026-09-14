@@ -84,6 +84,86 @@ export interface LoanApplicationOut {
   status: string;
   created_at: string;
   pending_position_title: string | null;
+  chat_session_id: string | null;
+}
+
+export interface ChatReportTranscriptEntry {
+  role: string;
+  content: string;
+  turn: number | null;
+  created_at: string;
+}
+
+export interface ChatReportSlot {
+  slot_key: string;
+  value: unknown;
+  source: string | null;
+  turn: number | null;
+}
+
+export interface ChatReportAssessment {
+  product_code: string;
+  metrics: Record<string, { state: string; value: unknown; unit: string | null }>;
+  metrics_computed: number;
+  metrics_total: number;
+  rule_results: Array<{ rule_id: string; status: string; message?: string }>;
+  // Matches agent-backend's rules.engine.route(): a tier plus counts, not
+  // an "outcome" field.
+  route: {
+    tier?: string;
+    fail_count?: number;
+    flag_count?: number;
+    provisional_count?: number;
+    [key: string]: unknown;
+  };
+  created_at: string;
+}
+
+export interface ChatReportDocument {
+  document_id: string;
+  verification_type: string;
+  original_filename: string;
+  content_type: string;
+  status: string;
+  uploaded_at: string;
+  extraction: { extracted_fields: Record<string, unknown>; notes: string } | null;
+  verifications: Array<{ slot_id: string; declared_value: string; extracted_value: string; status: string }>;
+}
+
+export interface ChatReportDecision {
+  outcome: string;
+  reasoning: string;
+  decided_at: string;
+}
+
+export interface ChatReport {
+  session_id: string;
+  status: string;
+  bank_id: string;
+  applicant_id: string | null;
+  product_code: string | null;
+  platform_application_id: string | null;
+  platform_status: string | null;
+  created_at: string;
+  updated_at: string;
+  transcript: ChatReportTranscriptEntry[];
+  slots: ChatReportSlot[];
+  assessment: ChatReportAssessment | null;
+  documents: ChatReportDocument[];
+  decision: ChatReportDecision | null;
+}
+
+export interface ApplicationDecisionPayload {
+  decision: "approved" | "rejected";
+  reason?: string;
+  approved_amount?: number;
+}
+
+export interface ApplicationDecisionOut {
+  application_id: string;
+  status: string;
+  decision: string;
+  decided_at: string;
 }
 
 export interface NotificationOut {
@@ -212,6 +292,14 @@ export const api = {
   createBankPolicy: (token: string, payload: CreateLendingPolicyPayload) =>
     request<LendingPolicyOut>("/bank/lending-policies", { method: "POST", body: JSON.stringify(payload) }, token),
   bankApplications: (token: string) => request<LoanApplicationOut[]>("/bank/loan-applications", {}, token),
+  bankChatReport: (token: string, applicationId: string) =>
+    request<ChatReport>(`/bank/loan-applications/${applicationId}/chat-report`, {}, token),
+  decideApplication: (token: string, applicationId: string, payload: ApplicationDecisionPayload) =>
+    request<ApplicationDecisionOut>(
+      `/bank/loan-applications/${applicationId}/decision`,
+      { method: "POST", body: JSON.stringify(payload) },
+      token
+    ),
   notifications: (token: string) => request<NotificationOut[]>("/bank/notifications", {}, token),
   markNotificationRead: (token: string, id: string) =>
     request<NotificationOut>(`/bank/notifications/${id}/read`, { method: "POST" }, token),

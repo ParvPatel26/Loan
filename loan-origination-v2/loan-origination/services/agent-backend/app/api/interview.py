@@ -1,9 +1,12 @@
+import logging
 import uuid
 
 import httpx
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from langgraph.types import Command
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.assessment.run import run_retail_assessment
 from app.agents.interaction.resolver import progress as compute_progress
 from app.api.schemas import (
     ApplicationResponse,
@@ -14,8 +17,11 @@ from app.api.schemas import (
     TurnResponse,
 )
 from app.core.config import get_settings
+from app.core.db import get_session
 from app.core.identity import get_customer_id_from_token
 from app.services.core_banking import core_banking
+
+logger = logging.getLogger(__name__)
 from app.services.operational import (
     ensure_application,
     get_applicant_id,
@@ -144,11 +150,20 @@ async def start_application(
     session_id = str(uuid.uuid4())
     bank_id = body.bank_id or get_settings().platform_bank_id
     if not bank_id:
-        raise HTTPException(
-            500,
-            "No bank configured for this chat session — set PLATFORM_BANK_ID in .env "
-            "or pass bank_id when starting the application.",
-        )
+        # Nothing explicit configured — resolve dynamically by bank code,
+        # same as every catalog call already does (see CatalogClient in
+        # app.services.core_banking). Keeps a fresh reseed of the database
+        # from breaking session start just because the id changed.
+        try:
+            bank_id = await core_banking.resolve_default_bank_id()
+        except httpx.HTTPStatusError as exc:
+            raise HTTPException(
+                502,
+                "Couldn't resolve the platform bank — check that PLATFORM_BANK_CODE "
+                "matches a real bank's code in services/api.",
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise HTTPException(503, "Core banking API unavailable while resolving the platform bank") from exc
     applicant_id = get_customer_id_from_token(authorization)
     await ensure_application(session_id, bank_id=bank_id, applicant_id=applicant_id)
 
@@ -191,12 +206,20 @@ async def send_message(
 
 @router.post("/{session_id}/submit")
 async def submit_application(
-    request: Request, session_id: str, authorization: str | None = Header(default=None)
+    request: Request, session_id: str, authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_session),
 ) -> dict:
     """Hands a completed interview into the main platform's real loan
     pipeline. A deliberate, explicit action (not automatic the moment the
     interview finishes) — like any loan application, the customer should
-    confirm before it becomes a binding submission staff will act on."""
+    confirm before it becomes a binding submission staff will act on.
+
+    Runs the Five C's assessment first and records it (see
+    app.agents.assessment.run.run_retail_assessment) so every submitted
+    application has a real assessment — including the credit_score metric —
+    on file for staff to see in the chat report, not just the routing
+    outcome. Best-effort: a failure to compute the assessment is logged but
+    never blocks the actual submission."""
     await _check_ownership(session_id, authorization)
     stage = await _resolve_stage(request, session_id)
     if stage is None:
@@ -215,6 +238,11 @@ async def submit_application(
     product_code = values.get("product_code")
     if not product_code or "loan_amount" not in filled or "loan_term_months" not in filled:
         raise HTTPException(409, "Missing required loan details — the interview may not be complete")
+
+    try:
+        await run_retail_assessment(interview_graph, _interview_config(session_id), db, session_id)
+    except Exception:
+        logger.exception("Five C's assessment failed for session %s — continuing with submission", session_id)
 
     bank_id = await get_bank_id(session_id)
     purpose = filled.get("purpose_detail") or filled.get("loan_purpose")

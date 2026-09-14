@@ -1,6 +1,7 @@
 import uuid
 from decimal import Decimal
 
+from app.agents.assessment.retail.metrics.bureau_mock import mock_credit_score
 from app.agents.assessment.retail.metrics.capacity import assess_capacity
 from app.agents.assessment.retail.metrics.capital import assess_capital
 from app.agents.assessment.retail.metrics.character import assess_character
@@ -58,9 +59,15 @@ async def run_retail_assessment(interview_graph, interview_config: dict, db: Asy
     }
 
     metrics = {}
-    metrics.update(assess_capacity(filled, product, policy, bank_transactions))
+    capacity_metrics = assess_capacity(filled, product, policy, bank_transactions)
+    metrics.update(capacity_metrics)
     metrics.update(assess_conditions(filled, product, policy))
-    metrics.update(assess_character(filled))
+    character_metrics = assess_character(filled)
+    # No bureau integration exists (see character.py) — credit_score would
+    # otherwise sit permanently UNAVAILABLE. Override it with a transparent
+    # mock estimate derived from the capacity metrics just computed above.
+    character_metrics["credit_score"] = mock_credit_score(capacity_metrics, filled)
+    metrics.update(character_metrics)
     metrics.update(assess_capital(filled, bank_transactions))
     metrics.update(assess_collateral(filled))
 

@@ -207,6 +207,7 @@ async def submit_application(
         purpose=payload.purpose,
         tenure_requested_months=payload.tenure_requested_months,
         status="submitted",
+        chat_session_id=payload.external_reference,
     )
     db.add(application)
     await db.flush()

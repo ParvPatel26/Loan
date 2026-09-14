@@ -52,8 +52,26 @@ class LoanApplicationOut(BaseModel):
     status: str
     created_at: datetime
     pending_position_title: str | None = None
+    chat_session_id: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+class ApplicationDecisionRequest(BaseModel):
+    """A staff member's manual call on an escalated application — approve or
+    reject. Distinct from the automatic route_loan_decision routing: this is
+    always decision_type='manual', decided_by the acting staff member."""
+
+    decision: str  # "approved" | "rejected"
+    reason: str | None = None
+    approved_amount: float | None = None
+
+
+class ApplicationDecisionOut(BaseModel):
+    application_id: uuid.UUID
+    status: str
+    decision: str
+    decided_at: datetime
 
 
 class LoanApplyRequest(BaseModel):
