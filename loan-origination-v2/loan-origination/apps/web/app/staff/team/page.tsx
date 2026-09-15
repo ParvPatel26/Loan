@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
-import { IconLock, IconUserPlus, IconUsers } from "@/components/icons";
+import { IconLock, IconPencil, IconUserPlus, IconUsers } from "@/components/icons";
 
 function initials(name: string) {
   return name.split(" ").map((p) => p[0]).slice(0, 2).join("").toUpperCase();
@@ -30,6 +30,11 @@ export default function StaffTeam() {
   const [form, setForm] = useState({ full_name: "", email: "", password: "", position_id: "" });
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const [editUser, setEditUser] = useState<UserOut | null>(null);
+  const [editForm, setEditForm] = useState({ full_name: "", position_id: "" });
+  const [editError, setEditError] = useState<string | null>(null);
+  const [editSubmitting, setEditSubmitting] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -61,6 +66,31 @@ export default function StaffTeam() {
       show(message, "error");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  function openEdit(u: UserOut) {
+    setEditUser(u);
+    setEditForm({ full_name: u.full_name, position_id: u.position_id || positions[0]?.id || "" });
+    setEditError(null);
+  }
+
+  async function handleEditSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (!token || !editUser) return;
+    setEditError(null);
+    setEditSubmitting(true);
+    try {
+      const updated = await api.updateBankStaff(token, editUser.id, editForm);
+      setTeam((list) => list.map((x) => (x.id === updated.id ? updated : x)));
+      setEditUser(null);
+      show(`${updated.full_name} updated`, "success");
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Failed to update staff member";
+      setEditError(message);
+      show(message, "error");
+    } finally {
+      setEditSubmitting(false);
     }
   }
 
@@ -146,17 +176,27 @@ export default function StaffTeam() {
                       <td className="px-5 py-3.5">
                         <Badge tone={u.is_active ? "emerald" : "slate"}>{u.is_active ? "Active" : "Inactive"}</Badge>
                       </td>
-                      <td className="px-5 py-3.5 text-right">
-                        {u.id !== currentUser?.id && (
-                          <Button
-                            variant={u.is_active ? "secondary" : "primary"}
-                            loading={togglingId === u.id}
-                            onClick={() => handleToggleActive(u)}
-                            className="px-3 py-1.5 text-xs"
+                      <td className="px-5 py-3.5">
+                        <div className="flex justify-end gap-2">
+                          <button
+                            type="button"
+                            onClick={() => openEdit(u)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-indigo-300 hover:bg-indigo-50 hover:text-indigo-700"
                           >
-                            {u.is_active ? "Deactivate" : "Reactivate"}
-                          </Button>
-                        )}
+                            <IconPencil className="h-3.5 w-3.5" />
+                            Edit
+                          </button>
+                          {u.id !== currentUser?.id && (
+                            <Button
+                              variant={u.is_active ? "secondary" : "primary"}
+                              loading={togglingId === u.id}
+                              onClick={() => handleToggleActive(u)}
+                              className="px-3 py-1.5 text-xs"
+                            >
+                              {u.is_active ? "Deactivate" : "Reactivate"}
+                            </Button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -219,6 +259,43 @@ export default function StaffTeam() {
             </Button>
             <Button type="submit" loading={submitting}>
               Add staff
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal open={editUser !== null} onClose={() => setEditUser(null)} title="Edit staff member">
+        <form onSubmit={handleEditSubmit} className="space-y-4">
+          <Field label="Full name">
+            <Input
+              required
+              value={editForm.full_name}
+              onChange={(e) => setEditForm((f) => ({ ...f, full_name: e.target.value }))}
+            />
+          </Field>
+          <Field label="Position">
+            <Select
+              required
+              value={editForm.position_id}
+              onChange={(e) => setEditForm((f) => ({ ...f, position_id: e.target.value }))}
+            >
+              {positions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.title}
+                  {p.max_approval_amount ? ` — up to $${Number(p.max_approval_amount).toLocaleString()}` : " — unlimited"}
+                </option>
+              ))}
+            </Select>
+          </Field>
+
+          {editError && <p className="text-sm text-red-600">{editError}</p>}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setEditUser(null)}>
+              Cancel
+            </Button>
+            <Button type="submit" loading={editSubmitting}>
+              Save changes
             </Button>
           </div>
         </form>

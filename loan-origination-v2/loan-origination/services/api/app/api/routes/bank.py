@@ -31,6 +31,9 @@ from app.schemas.bank import (
     CreateLoanProductRequest,
     LoanApplicationOut,
     NotificationOut,
+    UpdateBankStaffRequest,
+    UpdateLendingPolicyRequest,
+    UpdateLoanProductRequest,
 )
 
 router = APIRouter()
@@ -87,6 +90,47 @@ async def create_bank_staff(
     await db.commit()
     await db.refresh(staff)
     return staff
+
+
+@router.patch("/staff/{staff_id}", response_model=UserOut)
+async def update_bank_staff(
+    staff_id: uuid.UUID,
+    payload: UpdateBankStaffRequest,
+    actor: User = Depends(require_bank_permission("can_manage_staff")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Edit a staff member's name and/or position. Not for activation state —
+    use the deactivate/reactivate routes for that — and there's deliberately
+    no DELETE: a staff record stays around (deactivated) so past decisions,
+    escalations and audit entries it's tied to still resolve to someone."""
+    target = await db.get(User, staff_id)
+    if target is None or target.role != UserRole.STAFF.value or target.bank_id != actor.bank_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Staff member not found")
+
+    updates = payload.model_dump(exclude_unset=True)
+    if "position_id" in updates and updates["position_id"] is not None:
+        position = await db.get(BankPosition, updates["position_id"])
+        if position is None or position.bank_id != actor.bank_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Position not found for your bank")
+
+    if not updates:
+        return target
+
+    for field, value in updates.items():
+        setattr(target, field, value)
+
+    db.add(
+        AuditLog(
+            entity_type="user",
+            entity_id=str(target.id),
+            action="staff_updated",
+            performed_by=actor.id,
+            after_state={k: str(v) for k, v in updates.items()},
+        )
+    )
+    await db.commit()
+    await db.refresh(target)
+    return target
 
 
 @router.post("/staff/{staff_id}/deactivate", response_model=UserOut)
@@ -156,10 +200,18 @@ async def create_bank_product(
     actor: User = Depends(require_bank_permission("can_manage_products")),
     db: AsyncSession = Depends(get_db),
 ):
-    product = LoanProduct(bank_id=actor.bank_id, **payload.model_dump())
+    # product_code is NOT NULL + unique at the DB level (see migration
+    # 0f8bc6a836fe), so it must be set on the INSERT itself — generate the
+    # id ourselves up front instead of relying on a post-flush id.
+    product_id = uuid.uuid4()
+    product = LoanProduct(
+        id=product_id,
+        bank_id=actor.bank_id,
+        product_code=generate_product_code(payload.product_type, product_id),
+        **payload.model_dump(),
+    )
     db.add(product)
     await db.flush()
-    product.product_code = generate_product_code(product.product_type, product.id)
     db.add(
         AuditLog(
             entity_type="loan_product",
@@ -171,6 +223,94 @@ async def create_bank_product(
     )
     await db.commit()
     await db.refresh(product)
+    return product
+
+
+@router.patch("/loan-products/{product_id}", response_model=LoanProductOut)
+async def update_bank_product(
+    product_id: uuid.UUID,
+    payload: UpdateLoanProductRequest,
+    actor: User = Depends(require_bank_permission("can_manage_products")),
+    db: AsyncSession = Depends(get_db),
+):
+    product = await db.get(LoanProduct, product_id)
+    if product is None or product.bank_id != actor.bank_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+
+    updates = payload.model_dump(exclude_unset=True)
+    if not updates:
+        return product
+
+    for field, value in updates.items():
+        setattr(product, field, value)
+
+    db.add(
+        AuditLog(
+            entity_type="loan_product",
+            entity_id=str(product.id),
+            action="product_updated",
+            performed_by=actor.id,
+            after_state={k: str(v) for k, v in updates.items()},
+        )
+    )
+    await db.commit()
+    await db.refresh(product)
+    return product
+
+
+@router.post("/loan-products/{product_id}/deactivate", response_model=LoanProductOut)
+async def deactivate_bank_product(
+    product_id: uuid.UUID,
+    actor: User = Depends(require_bank_permission("can_manage_products")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Products are never hard-deleted — past applications and lending
+    policies reference them, and the chat agent's catalog client reads them
+    by code. Deactivating just hides a product from new applications (see
+    core-banking's product listing, which already filters on is_active)."""
+    product = await db.get(LoanProduct, product_id)
+    if product is None or product.bank_id != actor.bank_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+
+    if product.is_active:
+        product.is_active = False
+        db.add(
+            AuditLog(
+                entity_type="loan_product",
+                entity_id=str(product.id),
+                action="product_deactivated",
+                performed_by=actor.id,
+                after_state={"is_active": False},
+            )
+        )
+        await db.commit()
+        await db.refresh(product)
+    return product
+
+
+@router.post("/loan-products/{product_id}/reactivate", response_model=LoanProductOut)
+async def reactivate_bank_product(
+    product_id: uuid.UUID,
+    actor: User = Depends(require_bank_permission("can_manage_products")),
+    db: AsyncSession = Depends(get_db),
+):
+    product = await db.get(LoanProduct, product_id)
+    if product is None or product.bank_id != actor.bank_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+
+    if not product.is_active:
+        product.is_active = True
+        db.add(
+            AuditLog(
+                entity_type="loan_product",
+                entity_id=str(product.id),
+                action="product_reactivated",
+                performed_by=actor.id,
+                after_state={"is_active": True},
+            )
+        )
+        await db.commit()
+        await db.refresh(product)
     return product
 
 
@@ -205,6 +345,100 @@ async def create_bank_policy(
     )
     await db.commit()
     await db.refresh(policy)
+    return policy
+
+
+@router.patch("/lending-policies/{policy_id}", response_model=LendingPolicyOut)
+async def update_bank_policy(
+    policy_id: uuid.UUID,
+    payload: UpdateLendingPolicyRequest,
+    actor: User = Depends(require_bank_permission("can_manage_products")),
+    db: AsyncSession = Depends(get_db),
+):
+    policy = await db.get(LendingPolicy, policy_id)
+    if policy is None or policy.bank_id != actor.bank_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Policy not found")
+
+    updates = payload.model_dump(exclude_unset=True)
+    if "product_id" in updates and updates["product_id"] is not None:
+        product = await db.get(LoanProduct, updates["product_id"])
+        if product is None or product.bank_id != actor.bank_id:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Product not found for your bank")
+
+    if not updates:
+        return policy
+
+    for field, value in updates.items():
+        setattr(policy, field, value)
+    policy.updated_by = actor.id
+
+    db.add(
+        AuditLog(
+            entity_type="lending_policy",
+            entity_id=str(policy.id),
+            action="policy_updated",
+            performed_by=actor.id,
+            after_state={k: str(v) for k, v in updates.items()},
+        )
+    )
+    await db.commit()
+    await db.refresh(policy)
+    return policy
+
+
+@router.post("/lending-policies/{policy_id}/deactivate", response_model=LendingPolicyOut)
+async def deactivate_bank_policy(
+    policy_id: uuid.UUID,
+    actor: User = Depends(require_bank_permission("can_manage_products")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Policies are never hard-deleted — see _applicable_policy in
+    app.core.lending_logic, which now only considers is_active policies, so
+    deactivating one immediately stops it from governing new decisions
+    without losing the historical record of what it was."""
+    policy = await db.get(LendingPolicy, policy_id)
+    if policy is None or policy.bank_id != actor.bank_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Policy not found")
+
+    if policy.is_active:
+        policy.is_active = False
+        db.add(
+            AuditLog(
+                entity_type="lending_policy",
+                entity_id=str(policy.id),
+                action="policy_deactivated",
+                performed_by=actor.id,
+                after_state={"is_active": False},
+            )
+        )
+        await db.commit()
+        await db.refresh(policy)
+    return policy
+
+
+@router.post("/lending-policies/{policy_id}/reactivate", response_model=LendingPolicyOut)
+async def reactivate_bank_policy(
+    policy_id: uuid.UUID,
+    actor: User = Depends(require_bank_permission("can_manage_products")),
+    db: AsyncSession = Depends(get_db),
+):
+    policy = await db.get(LendingPolicy, policy_id)
+    if policy is None or policy.bank_id != actor.bank_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Policy not found")
+
+    if not policy.is_active:
+        policy.is_active = True
+        db.add(
+            AuditLog(
+                entity_type="lending_policy",
+                entity_id=str(policy.id),
+                action="policy_reactivated",
+                performed_by=actor.id,
+                after_state={"is_active": True},
+            )
+        )
+        await db.commit()
+        await db.refresh(policy)
     return policy
 
 

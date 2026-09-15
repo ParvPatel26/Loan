@@ -25,6 +25,7 @@ async def _applicable_policy(db: AsyncSession, application: LoanApplication) -> 
     result = await db.execute(
         select(LendingPolicy).where(
             LendingPolicy.bank_id == application.bank_id,
+            LendingPolicy.is_active.is_(True),
             (LendingPolicy.product_id == application.product_id) | (LendingPolicy.product_id.is_(None)),
         )
     )

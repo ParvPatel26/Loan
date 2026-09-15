@@ -23,6 +23,16 @@ class CreateBankStaffRequest(BaseModel):
     position_id: uuid.UUID
 
 
+class UpdateBankStaffRequest(BaseModel):
+    """Partial update — only fields the client actually sent are applied
+    (see the route's use of model_dump(exclude_unset=True)). Email and
+    password aren't editable here; activation state is handled by the
+    dedicated deactivate/reactivate routes, not this one."""
+
+    full_name: str | None = None
+    position_id: uuid.UUID | None = None
+
+
 class CreateLoanProductRequest(BaseModel):
     product_type: str
     name: str
@@ -34,11 +44,38 @@ class CreateLoanProductRequest(BaseModel):
     tenure_max_months: int
 
 
+class UpdateLoanProductRequest(BaseModel):
+    """Partial update — every field optional, only what's sent is applied.
+    is_active is handled by the deactivate/reactivate routes instead, since
+    products are never hard-deleted (they're referenced by past
+    applications and by the chat agent's catalog)."""
+
+    product_type: str | None = None
+    name: str | None = None
+    min_amount: float | None = None
+    max_amount: float | None = None
+    interest_rate_min: float | None = None
+    interest_rate_max: float | None = None
+    tenure_min_months: int | None = None
+    tenure_max_months: int | None = None
+
+
 class CreateLendingPolicyRequest(BaseModel):
     product_id: uuid.UUID | None = None
     auto_approval_max_amount: float
     min_credit_score: int
     max_dti_ratio: float
+
+
+class UpdateLendingPolicyRequest(BaseModel):
+    """Partial update — every field optional, only what's sent is applied.
+    product_id may legitimately be set to null (bank-wide default), which
+    exclude_unset=True still distinguishes from "not sent"."""
+
+    product_id: uuid.UUID | None = None
+    auto_approval_max_amount: float | None = None
+    min_credit_score: int | None = None
+    max_dti_ratio: float | None = None
 
 
 class LoanApplicationOut(BaseModel):

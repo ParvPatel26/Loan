@@ -13,7 +13,7 @@ class LoanProduct(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     bank_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("banks.id"), nullable=False)
-    product_code: Mapped[str] = mapped_column(String(40), unique=True, nullable=True)
+    product_code: Mapped[str] = mapped_column(String(40), unique=True, nullable=False)
     product_type: Mapped[str] = mapped_column(String(30), nullable=False, default=LoanType.PERSONAL.value)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     min_amount: Mapped[float] = mapped_column(Numeric(14, 2), nullable=False)

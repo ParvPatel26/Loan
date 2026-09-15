@@ -52,6 +52,7 @@ export interface LendingPolicyOut {
   auto_approval_max_amount: number;
   min_credit_score: number;
   max_dti_ratio: number;
+  is_active: boolean;
 }
 
 export interface AuditLogOut {
@@ -191,6 +192,11 @@ export interface CreateBankStaffPayload {
   position_id: string;
 }
 
+export interface UpdateBankStaffPayload {
+  full_name?: string;
+  position_id?: string;
+}
+
 export interface CreateLoanProductPayload {
   product_type: string;
   name: string;
@@ -202,11 +208,29 @@ export interface CreateLoanProductPayload {
   tenure_max_months: number;
 }
 
+export interface UpdateLoanProductPayload {
+  product_type?: string;
+  name?: string;
+  min_amount?: number;
+  max_amount?: number;
+  interest_rate_min?: number;
+  interest_rate_max?: number;
+  tenure_min_months?: number;
+  tenure_max_months?: number;
+}
+
 export interface CreateLendingPolicyPayload {
   product_id?: string | null;
   auto_approval_max_amount: number;
   min_credit_score: number;
   max_dti_ratio: number;
+}
+
+export interface UpdateLendingPolicyPayload {
+  product_id?: string | null;
+  auto_approval_max_amount?: number;
+  min_credit_score?: number;
+  max_dti_ratio?: number;
 }
 
 export interface LoanApplyPayload {
@@ -281,6 +305,8 @@ export const api = {
   bankStaff: (token: string) => request<UserOut[]>("/bank/staff", {}, token),
   createBankStaff: (token: string, payload: CreateBankStaffPayload) =>
     request<UserOut>("/bank/staff", { method: "POST", body: JSON.stringify(payload) }, token),
+  updateBankStaff: (token: string, id: string, payload: UpdateBankStaffPayload) =>
+    request<UserOut>(`/bank/staff/${id}`, { method: "PATCH", body: JSON.stringify(payload) }, token),
   deactivateBankStaff: (token: string, id: string) =>
     request<UserOut>(`/bank/staff/${id}/deactivate`, { method: "POST" }, token),
   reactivateBankStaff: (token: string, id: string) =>
@@ -288,9 +314,21 @@ export const api = {
   bankProducts: (token: string) => request<LoanProductOut[]>("/bank/loan-products", {}, token),
   createBankProduct: (token: string, payload: CreateLoanProductPayload) =>
     request<LoanProductOut>("/bank/loan-products", { method: "POST", body: JSON.stringify(payload) }, token),
+  updateBankProduct: (token: string, id: string, payload: UpdateLoanProductPayload) =>
+    request<LoanProductOut>(`/bank/loan-products/${id}`, { method: "PATCH", body: JSON.stringify(payload) }, token),
+  deactivateBankProduct: (token: string, id: string) =>
+    request<LoanProductOut>(`/bank/loan-products/${id}/deactivate`, { method: "POST" }, token),
+  reactivateBankProduct: (token: string, id: string) =>
+    request<LoanProductOut>(`/bank/loan-products/${id}/reactivate`, { method: "POST" }, token),
   bankPolicies: (token: string) => request<LendingPolicyOut[]>("/bank/lending-policies", {}, token),
   createBankPolicy: (token: string, payload: CreateLendingPolicyPayload) =>
     request<LendingPolicyOut>("/bank/lending-policies", { method: "POST", body: JSON.stringify(payload) }, token),
+  updateBankPolicy: (token: string, id: string, payload: UpdateLendingPolicyPayload) =>
+    request<LendingPolicyOut>(`/bank/lending-policies/${id}`, { method: "PATCH", body: JSON.stringify(payload) }, token),
+  deactivateBankPolicy: (token: string, id: string) =>
+    request<LendingPolicyOut>(`/bank/lending-policies/${id}/deactivate`, { method: "POST" }, token),
+  reactivateBankPolicy: (token: string, id: string) =>
+    request<LendingPolicyOut>(`/bank/lending-policies/${id}/reactivate`, { method: "POST" }, token),
   bankApplications: (token: string) => request<LoanApplicationOut[]>("/bank/loan-applications", {}, token),
   bankChatReport: (token: string, applicationId: string) =>
     request<ChatReport>(`/bank/loan-applications/${applicationId}/chat-report`, {}, token),

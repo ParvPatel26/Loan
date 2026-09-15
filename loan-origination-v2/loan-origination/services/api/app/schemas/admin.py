@@ -38,6 +38,7 @@ class LendingPolicyOut(BaseModel):
     auto_approval_max_amount: float
     min_credit_score: int
     max_dti_ratio: float
+    is_active: bool
 
     model_config = {"from_attributes": True}
 
