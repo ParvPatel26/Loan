@@ -54,8 +54,10 @@ export default function AdminAudit() {
                   <tr key={l.id} className="transition-colors hover:bg-slate-50/60">
                     <td className="px-5 py-3.5 text-slate-500">{new Date(l.created_at).toLocaleString()}</td>
                     <td className="px-5 py-3.5">
-                      <span className="font-medium text-slate-700 capitalize">{l.entity_type}</span>{" "}
-                      <span className="text-slate-400">#{l.entity_id.slice(0, 8)}</span>
+                      <span className="font-medium text-slate-700 capitalize">{l.entity_type.replace(/_/g, " ")}</span>{" "}
+                      <span className="text-slate-400">
+                        {l.entity_label ?? `#${l.entity_id.slice(0, 8)}`}
+                      </span>
                     </td>
                     <td className="px-5 py-3.5">
                       <Badge tone="indigo">{l.action.replace(/_/g, " ")}</Badge>

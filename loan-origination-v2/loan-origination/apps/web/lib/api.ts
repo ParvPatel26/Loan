@@ -1,3 +1,5 @@
+import { handleExpiredSession } from "./session";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
 export interface UserOut {
@@ -59,6 +61,7 @@ export interface AuditLogOut {
   id: string;
   entity_type: string;
   entity_id: string;
+  entity_label?: string | null;
   action: string;
   performed_by: string | null;
   created_at: string;
@@ -77,6 +80,8 @@ export interface BankPositionOut {
 export interface LoanApplicationOut {
   id: string;
   applicant_id: string;
+  applicant_name?: string | null;
+  applicant_email?: string | null;
   bank_id: string;
   product_id: string;
   loan_type: string;
@@ -197,6 +202,20 @@ export interface UpdateBankStaffPayload {
   position_id?: string;
 }
 
+export interface CreateBankPayload {
+  name: string;
+  code: string;
+  contact_email?: string;
+}
+
+export interface CreateBankPositionPayload {
+  title: string;
+  rank: number;
+  max_approval_amount?: number | null;
+  can_manage_staff: boolean;
+  can_manage_products: boolean;
+}
+
 export interface CreateLoanProductPayload {
   product_type: string;
   name: string;
@@ -266,6 +285,9 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
     } catch {
       /* ignore parse errors */
     }
+    // Only an authenticated call going stale, not a failed login attempt
+    // (which also returns 401 but never carries a token here).
+    if (res.status === 401 && token) handleExpiredSession();
     throw new ApiError(res.status, detail);
   }
   if (res.status === 204) return undefined as T;
@@ -288,8 +310,20 @@ export const api = {
   dashboard: (token: string) => request<DashboardStats>("/admin/dashboard", {}, token),
   users: (token: string) => request<UserOut[]>("/admin/users", {}, token),
   banks: (token: string) => request<BankOut[]>("/admin/banks", {}, token),
+  createBank: (token: string, payload: CreateBankPayload) =>
+    request<BankOut>("/admin/banks", { method: "POST", body: JSON.stringify(payload) }, token),
+  deactivateBank: (token: string, id: string) =>
+    request<BankOut>(`/admin/banks/${id}/deactivate`, { method: "POST" }, token),
+  reactivateBank: (token: string, id: string) =>
+    request<BankOut>(`/admin/banks/${id}/reactivate`, { method: "POST" }, token),
   bankPositionsForAdmin: (token: string, bankId: string) =>
     request<BankPositionOut[]>(`/admin/banks/${bankId}/positions`, {}, token),
+  createBankPositionForAdmin: (token: string, bankId: string, payload: CreateBankPositionPayload) =>
+    request<BankPositionOut>(
+      `/admin/banks/${bankId}/positions`,
+      { method: "POST", body: JSON.stringify(payload) },
+      token
+    ),
   loanProducts: (token: string) => request<LoanProductOut[]>("/admin/loan-products", {}, token),
   lendingPolicies: (token: string) => request<LendingPolicyOut[]>("/admin/lending-policies", {}, token),
   auditLogs: (token: string) => request<AuditLogOut[]>("/admin/audit-logs", {}, token),
@@ -338,6 +372,7 @@ export const api = {
       { method: "POST", body: JSON.stringify(payload) },
       token
     ),
+  bankAuditLogs: (token: string) => request<AuditLogOut[]>("/bank/audit-logs", {}, token),
   notifications: (token: string) => request<NotificationOut[]>("/bank/notifications", {}, token),
   markNotificationRead: (token: string, id: string) =>
     request<NotificationOut>(`/bank/notifications/${id}/read`, { method: "POST" }, token),

@@ -55,6 +55,7 @@ async def apply_for_loan(
 
     db.add(
         AuditLog(
+            bank_id=application.bank_id,
             entity_type="loan_application",
             entity_id=str(application.id),
             action="submitted",

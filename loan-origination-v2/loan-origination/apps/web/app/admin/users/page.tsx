@@ -6,7 +6,7 @@ import { api, type UserOut, type BankOut, type BankPositionOut, ApiError } from 
 import { useToast } from "@/components/ui/Toast";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { TableSkeleton } from "@/components/ui/Skeleton";
-import { Badge, RoleBadge } from "@/components/ui/Badge";
+import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
@@ -31,6 +31,8 @@ export default function AdminUsers() {
   const [submitting, setSubmitting] = useState(false);
   const [positions, setPositions] = useState<BankPositionOut[]>([]);
   const [positionsLoading, setPositionsLoading] = useState(false);
+
+  const [tab, setTab] = useState<"customer" | "staff" | "admin">("staff");
 
   function loadUsers(t: string) {
     setLoading(true);
@@ -101,6 +103,18 @@ export default function AdminUsers() {
     }
   }
 
+  const TABS: Array<{ key: "customer" | "staff" | "admin"; label: string }> = [
+    { key: "customer", label: "Customers" },
+    { key: "staff", label: "Staff" },
+    { key: "admin", label: "Admins" },
+  ];
+  const counts = {
+    customer: users.filter((u) => u.role === "customer").length,
+    staff: users.filter((u) => u.role === "staff").length,
+    admin: users.filter((u) => u.role === "admin").length,
+  };
+  const filtered = users.filter((u) => u.role === tab);
+
   return (
     <div>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -108,22 +122,48 @@ export default function AdminUsers() {
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Users</h1>
           <p className="mt-1 text-sm text-slate-500">All accounts across customer, staff and admin roles.</p>
         </div>
-        <Button onClick={() => setModalOpen(true)} disabled={banks.length === 0}>
-          <IconUserPlus className="h-4 w-4" />
-          Add staff
-        </Button>
+        {tab === "staff" && (
+          <Button onClick={() => setModalOpen(true)} disabled={banks.length === 0}>
+            <IconUserPlus className="h-4 w-4" />
+            Add staff
+          </Button>
+        )}
       </div>
 
       {error && <div className="mt-4 rounded-lg bg-red-50 px-3.5 py-2.5 text-sm text-red-700">{error}</div>}
 
-      <Card className="mt-6 overflow-hidden">
-        <CardHeader title="All users" subtitle={`${users.length} total`} />
+      <div className="mt-6 flex gap-1.5 border-b border-slate-200">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setTab(t.key)}
+            className={`-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-medium transition-colors ${
+              tab === t.key
+                ? "border-indigo-600 text-indigo-700"
+                : "border-transparent text-slate-500 hover:text-slate-800"
+            }`}
+          >
+            {t.label}
+            <span
+              className={`rounded-full px-1.5 py-0.5 text-xs ${
+                tab === t.key ? "bg-indigo-50 text-indigo-700" : "bg-slate-100 text-slate-500"
+              }`}
+            >
+              {counts[t.key]}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      <Card className="mt-4 overflow-hidden">
+        <CardHeader title={TABS.find((t) => t.key === tab)?.label ?? ""} subtitle={`${filtered.length} total`} />
         {loading ? (
           <TableSkeleton rows={4} cols={5} />
-        ) : users.length === 0 ? (
+        ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-4 py-14 text-center">
             <IconUsers className="h-8 w-8 text-slate-300" />
-            <p className="text-sm text-slate-400">No users yet.</p>
+            <p className="text-sm text-slate-400">No {TABS.find((t) => t.key === tab)?.label.toLowerCase()} yet.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -132,13 +172,13 @@ export default function AdminUsers() {
                 <tr>
                   <th className="px-5 py-3 font-medium">Name</th>
                   <th className="px-5 py-3 font-medium">Email</th>
-                  <th className="px-5 py-3 font-medium">Role</th>
+                  {tab === "staff" && <th className="px-5 py-3 font-medium">Bank</th>}
                   <th className="px-5 py-3 font-medium">Status</th>
                   <th className="px-5 py-3 font-medium"></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {users.map((u) => (
+                {filtered.map((u) => (
                   <tr key={u.id} className={`transition-colors hover:bg-slate-50/60 ${u.is_active ? "" : "opacity-60"}`}>
                     <td className="px-5 py-3.5">
                       <div className="flex items-center gap-3">
@@ -149,9 +189,11 @@ export default function AdminUsers() {
                       </div>
                     </td>
                     <td className="px-5 py-3.5 text-slate-500">{u.email}</td>
-                    <td className="px-5 py-3.5">
-                      <RoleBadge role={u.role} />
-                    </td>
+                    {tab === "staff" && (
+                      <td className="px-5 py-3.5 text-slate-600">
+                        {banks.find((b) => b.id === u.bank_id)?.name ?? <span className="text-slate-300">—</span>}
+                      </td>
+                    )}
                     <td className="px-5 py-3.5">
                       <Badge tone={u.is_active ? "emerald" : "slate"}>{u.is_active ? "Active" : "Inactive"}</Badge>
                     </td>

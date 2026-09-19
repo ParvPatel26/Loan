@@ -3,6 +3,8 @@
 // discovery/interview turns, document upload, assessment, and a final
 // "submit" call that hands the completed interview into the main platform's
 // real loan pipeline (see services/api's /api/v1/applications endpoint).
+import { handleExpiredSession } from "./session";
+
 const AGENT_API_URL = process.env.NEXT_PUBLIC_AGENT_API_URL || "http://localhost:8001";
 
 export interface SlotHint {
@@ -19,6 +21,19 @@ export interface Progress {
   complete: boolean;
 }
 
+export interface ProductOption {
+  product_code: string;
+  name: string;
+  interest_rate: number | null;
+  comparison_rate: number | null;
+  rate_type: string | null;
+  min_amount: number;
+  max_amount: number;
+  min_term_months: number;
+  max_term_months: number;
+  features: string[];
+}
+
 export interface TurnResponse {
   session_id: string;
   stage: string;
@@ -28,6 +43,7 @@ export interface TurnResponse {
   complete: boolean;
   escalated: boolean;
   product_code: string | null;
+  products?: ProductOption[] | null;
 }
 
 export interface RequiredDocument {
@@ -96,6 +112,9 @@ async function request<T>(path: string, options: RequestInit = {}, token?: strin
     } catch {
       /* ignore parse errors */
     }
+    // Same JWT, same "Invalid or expired token" as services/api — see
+    // agent-backend's app/core/identity.get_customer_id_from_token.
+    if (res.status === 401 && token) handleExpiredSession();
     throw new AgentApiError(res.status, typeof detail === "string" ? detail : res.statusText);
   }
   if (res.status === 204) return undefined as T;

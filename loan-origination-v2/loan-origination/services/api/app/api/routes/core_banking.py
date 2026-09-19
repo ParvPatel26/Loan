@@ -216,6 +216,7 @@ async def submit_application(
 
     db.add(
         AuditLog(
+            bank_id=application.bank_id,
             entity_type="loan_application",
             entity_id=str(application.id),
             action="submitted_via_chat_agent",

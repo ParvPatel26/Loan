@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
@@ -24,6 +24,17 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [expiredNotice, setExpiredNotice] = useState(false);
+
+  // Read directly off window.location rather than useSearchParams (which
+  // Next.js requires a Suspense boundary for) — this page is client-only
+  // anyway, and this is a one-time check on mount, not something that
+  // needs to react to client-side navigation.
+  useEffect(() => {
+    if (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("expired")) {
+      setExpiredNotice(true);
+    }
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -52,6 +63,13 @@ export default function LoginPage() {
         <h1 className="text-2xl font-semibold text-slate-900">Welcome back</h1>
         <p className="mt-1 text-sm text-slate-500">Sign in to your account to continue.</p>
       </div>
+
+      {expiredNotice && (
+        <div className="mt-5 flex items-start gap-2 rounded-lg bg-amber-50 px-3.5 py-2.5 text-sm text-amber-800">
+          <IconAlert className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>Your session expired — sign in again to continue.</span>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="mt-8 space-y-4">
         <Field label="Email">

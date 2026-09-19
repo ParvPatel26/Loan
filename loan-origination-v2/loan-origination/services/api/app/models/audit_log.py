@@ -16,6 +16,10 @@ class AuditLog(Base):
     entity_id: Mapped[str] = mapped_column(String(100), nullable=False)
     action: Mapped[str] = mapped_column(String(50), nullable=False)
     performed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    # Which bank this action belongs to, so a bank manager can see just
+    # their own bank's activity (GET /bank/audit-logs). Null for actions
+    # with no bank of their own (e.g. an admin managing another admin).
+    bank_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("banks.id"), nullable=True)
     before_state: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     after_state: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     ip_address: Mapped[str | None] = mapped_column(String(64), nullable=True)

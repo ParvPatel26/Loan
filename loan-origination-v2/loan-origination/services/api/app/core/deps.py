@@ -72,3 +72,17 @@ def require_bank_permission(permission: str):
         return staff
 
     return _check
+
+
+async def require_bank_manager(staff: User = Depends(get_current_staff), db: AsyncSession = Depends(get_db)) -> User:
+    """Stricter than require_bank_permission: requires a position with BOTH
+    can_manage_staff and can_manage_products — i.e. an actual bank manager
+    (the "Branch Manager" position create_bank auto-creates), not just
+    someone with one partial permission. Used for things a manager alone
+    should see, like the bank's own audit log."""
+    if not staff.position_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No position assigned")
+    position = await db.get(BankPosition, staff.position_id)
+    if not position or not (position.can_manage_staff and position.can_manage_products):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Manager authority required for this action")
+    return staff

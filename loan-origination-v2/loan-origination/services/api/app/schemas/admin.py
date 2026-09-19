@@ -47,6 +47,7 @@ class AuditLogOut(BaseModel):
     id: uuid.UUID
     entity_type: str
     entity_id: str
+    entity_label: str | None = None
     action: str
     performed_by: uuid.UUID | None
     created_at: datetime
@@ -67,3 +68,23 @@ class CreateStaffRequest(BaseModel):
     full_name: str
     bank_id: uuid.UUID
     position_id: uuid.UUID | None = None
+
+
+class CreateBankRequest(BaseModel):
+    name: str
+    code: str
+    contact_email: EmailStr | None = None
+
+
+class CreateBankPositionRequest(BaseModel):
+    """One rung on a bank's approval ladder. max_approval_amount left unset
+    means unlimited authority. can_manage_staff/can_manage_products are what
+    make a position a "branch manager" in practice — there's no separate
+    per-bank admin role, a staff account with a position that has both of
+    these set to true is how a bank gets its own local admin."""
+
+    title: str
+    rank: int
+    max_approval_amount: float | None = None
+    can_manage_staff: bool = False
+    can_manage_products: bool = False

@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth-context";
 import { StaffProvider, useStaff } from "@/lib/staff-context";
 import {
   IconBell,
+  IconClipboard,
   IconClose,
   IconFile,
   IconGrid,
@@ -42,6 +43,9 @@ function StaffShell({ children, fullName }: { children: React.ReactNode; fullNam
       ? [{ href: "/staff/policies", label: "Policies", icon: IconShield, badge: 0 }]
       : []),
     { href: "/staff/applications", label: "Applications", icon: IconFile, badge: 0 },
+    ...(position?.can_manage_staff && position?.can_manage_products
+      ? [{ href: "/staff/audit", label: "Audit", icon: IconClipboard, badge: 0 }]
+      : []),
     { href: "/staff/notifications", label: "Notifications", icon: IconBell, badge: unreadCount },
   ];
 

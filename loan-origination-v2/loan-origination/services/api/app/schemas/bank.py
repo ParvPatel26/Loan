@@ -81,6 +81,8 @@ class UpdateLendingPolicyRequest(BaseModel):
 class LoanApplicationOut(BaseModel):
     id: uuid.UUID
     applicant_id: uuid.UUID
+    applicant_name: str | None = None
+    applicant_email: str | None = None
     bank_id: uuid.UUID
     product_id: uuid.UUID
     loan_type: str

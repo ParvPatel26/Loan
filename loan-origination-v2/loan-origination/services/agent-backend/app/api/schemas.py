@@ -29,6 +29,24 @@ class MessageRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
 
 
+class ProductOption(BaseModel):
+    """One product on offer during the discovery stage's product_selection
+    turn — the same fields discovery.py's _product_brief pulls off the
+    catalog. Sent alongside `question` so the frontend can render each
+    option as its own card instead of parsing them back out of chat text."""
+
+    product_code: str
+    name: str
+    interest_rate: float | None = None
+    comparison_rate: float | None = None
+    rate_type: str | None = None
+    min_amount: float
+    max_amount: float
+    min_term_months: int
+    max_term_months: int
+    features: list[str] = []
+
+
 class ApplicationResponse(BaseModel):
     session_id: str
     product_code: str
@@ -47,6 +65,9 @@ class TurnResponse(BaseModel):
     complete: bool
     escalated: bool = False
     product_code: str | None = None
+    # Populated only on a discovery "product_selection" turn — the products
+    # the applicant is choosing between, for the frontend to render as cards.
+    products: list[ProductOption] | None = None
 
 
 class DecisionRequest(BaseModel):

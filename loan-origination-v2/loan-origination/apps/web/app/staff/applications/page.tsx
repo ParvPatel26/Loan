@@ -108,6 +108,7 @@ export default function StaffApplications() {
             <table className="w-full min-w-[720px] text-left text-sm">
               <thead className="border-b border-slate-100 bg-slate-50/60 text-xs uppercase tracking-wide text-slate-400">
                 <tr>
+                  <th className="px-5 py-3 font-medium">Customer</th>
                   <th className="px-5 py-3 font-medium">Type</th>
                   <th className="px-5 py-3 font-medium">Amount</th>
                   <th className="px-5 py-3 font-medium">Status</th>
@@ -120,6 +121,10 @@ export default function StaffApplications() {
               <tbody className="divide-y divide-slate-100">
                 {applications.map((a) => (
                   <tr key={a.id} className="transition-colors hover:bg-slate-50/60">
+                    <td className="px-5 py-3.5">
+                      <p className="font-medium text-slate-800">{a.applicant_name ?? "—"}</p>
+                      {a.applicant_email && <p className="text-xs text-slate-400">{a.applicant_email}</p>}
+                    </td>
                     <td className="px-5 py-3.5 capitalize text-slate-600">{a.loan_type}</td>
                     <td className="px-5 py-3.5 font-medium text-slate-900">
                       ${a.requested_amount.toLocaleString()}
@@ -194,6 +199,8 @@ export default function StaffApplications() {
         {decideApp && (
           <div>
             <dl className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm">
+              <dt className="text-slate-400">Customer</dt>
+              <dd className="text-slate-800">{decideApp.applicant_name ?? "—"}</dd>
               <dt className="text-slate-400">Type</dt>
               <dd className="capitalize text-slate-800">{decideApp.loan_type}</dd>
               <dt className="text-slate-400">Amount</dt>

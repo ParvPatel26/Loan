@@ -11,6 +11,7 @@ from app.agents.interaction.resolver import progress as compute_progress
 from app.api.schemas import (
     ApplicationResponse,
     MessageRequest,
+    ProductOption,
     Progress,
     SlotHint,
     StartRequest,
@@ -121,6 +122,26 @@ async def _interview_turn(request: Request, session_id: str, result: dict) -> Tu
     )
 
 
+def _product_options(state_products: list[dict] | None) -> list[ProductOption] | None:
+    if not state_products:
+        return None
+    return [
+        ProductOption(
+            product_code=p["product_code"],
+            name=p["name"],
+            interest_rate=p.get("interest_rate"),
+            comparison_rate=p.get("comparison_rate"),
+            rate_type=p.get("rate_type"),
+            min_amount=p["min_amount"],
+            max_amount=p["max_amount"],
+            min_term_months=p["min_term_months"],
+            max_term_months=p["max_term_months"],
+            features=p.get("features") or [],
+        )
+        for p in state_products
+    ]
+
+
 async def _discovery_turn(request: Request, session_id: str, result: dict) -> TurnResponse:
     discovery_graph = request.app.state.discovery_graph
     payload = _interrupt_payload(result)
@@ -135,11 +156,13 @@ async def _discovery_turn(request: Request, session_id: str, result: dict) -> Tu
             raise HTTPException(500, "Discovery ended without a product")
         return await _start_interview(request, session_id, product_code)
 
+    stage = payload.get("stage", "discovery")
     return TurnResponse(
         session_id=session_id,
-        stage=payload.get("stage", "discovery"),
+        stage=stage,
         question=payload.get("question"),
         complete=False,
+        products=_product_options(payload.get("products")) if stage == "product_selection" else None,
     )
 
 

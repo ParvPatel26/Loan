@@ -1,7 +1,8 @@
 """Decides what happens to a submitted loan application: auto-approve under the
-bank's policy threshold, or route it to the lowest-authority position on the
-bank's approval ladder whose limit actually covers the requested amount —
-notifying every staff member who holds that position.
+bank's policy threshold (notifying the bank's manager(s) so they're not blind
+to it), or route it to the lowest-authority position on the bank's approval
+ladder whose limit actually covers the requested amount — notifying every
+staff member who holds that position.
 
 This is deliberately a plain function over the ORM session rather than a
 background task/agent — it's the seed of what the Decision Agent (FR8) will
@@ -49,6 +50,33 @@ async def route_loan_decision(db: AsyncSession, application: LoanApplication) ->
         )
         application.status = LoanStatus.APPROVED.value
         db.add(decision)
+
+        # No human approved this one, so the bank's manager(s) — a position
+        # with BOTH can_manage_staff and can_manage_products, same bar as
+        # require_bank_manager — get a heads-up notification rather than
+        # being left with no visibility into auto-approvals happening under
+        # their own policy thresholds.
+        manager_result = await db.execute(
+            select(User)
+            .join(BankPosition, BankPosition.id == User.position_id)
+            .where(
+                User.bank_id == application.bank_id,
+                User.is_active.is_(True),
+                BankPosition.can_manage_staff.is_(True),
+                BankPosition.can_manage_products.is_(True),
+            )
+        )
+        for manager in manager_result.scalars().all():
+            db.add(
+                Notification(
+                    user_id=manager.id,
+                    title="Loan auto-approved",
+                    message=f"A ${amount:,.0f} loan application was auto-approved under your bank's lending policy.",
+                    entity_type="loan_application",
+                    entity_id=str(application.id),
+                )
+            )
+
         return {"outcome": "auto_approved", "position": None}
 
     positions_result = await db.execute(

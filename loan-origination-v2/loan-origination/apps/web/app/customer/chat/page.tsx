@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth-context";
 import {
   agentApi,
   AgentApiError,
+  type ProductOption,
   type Progress,
   type RequiredDocument,
   type SlotHint,
@@ -17,8 +18,10 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { IconArrowRight, IconCheck, IconClipboard, IconPaperclip, IconSparkle } from "@/components/icons";
+import { ChatMarkdown } from "@/components/chat/ChatMarkdown";
+import { ProductOptionCards } from "@/components/chat/ProductOptionCards";
 
-type ChatMessage = { role: "agent" | "user"; text: string };
+type ChatMessage = { role: "agent" | "user"; text: string; products?: ProductOption[] };
 
 export default function LoanAssistantChat() {
   const { user, token, loading } = useAuth();
@@ -27,7 +30,9 @@ export default function LoanAssistantChat() {
 
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [stage, setStage] = useState<"starting" | "discovery" | "interview" | "complete">("starting");
+  const [stage, setStage] = useState<"starting" | "discovery" | "product_selection" | "interview" | "complete">(
+    "starting"
+  );
   const [slotsInPlay, setSlotsInPlay] = useState<SlotHint[]>([]);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [productCode, setProductCode] = useState<string | null>(null);
@@ -44,6 +49,7 @@ export default function LoanAssistantChat() {
   const [submitResult, setSubmitResult] = useState<SubmitResult | null>(null);
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const started = useRef(false);
 
   useEffect(() => {
@@ -61,7 +67,8 @@ export default function LoanAssistantChat() {
         setProgress(res.progress);
         setSlotsInPlay(res.slots_in_play);
         setProductCode(res.product_code);
-        if (res.question) setMessages([{ role: "agent", text: res.question }]);
+        if (res.question)
+          setMessages([{ role: "agent", text: res.question, products: res.products ?? undefined }]);
       })
       .catch((err) => {
         const message = err instanceof AgentApiError ? err.message : "Couldn't reach the loan assistant";
@@ -73,6 +80,15 @@ export default function LoanAssistantChat() {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, stage]);
+
+  // Put focus back in the reply box after every turn — the agent's reply
+  // (or the initial question) lands, the input re-enables, and the
+  // applicant can just keep typing instead of having to click into it again.
+  useEffect(() => {
+    if (!sending && stage !== "complete" && sessionId) {
+      inputRef.current?.focus();
+    }
+  }, [sending, stage, sessionId, messages]);
 
   useEffect(() => {
     if (stage !== "complete" || !sessionId) return;
@@ -95,7 +111,11 @@ export default function LoanAssistantChat() {
       setProgress(res.progress);
       setSlotsInPlay(res.slots_in_play);
       setProductCode(res.product_code);
-      if (res.question) setMessages((m) => [...m, { role: "agent", text: res.question as string }]);
+      if (res.question)
+        setMessages((m) => [
+          ...m,
+          { role: "agent", text: res.question as string, products: res.products ?? undefined },
+        ]);
       if (res.stage === "complete" && !res.question) {
         setMessages((m) => [
           ...m,
@@ -114,6 +134,10 @@ export default function LoanAssistantChat() {
   function handleSubmitTurn(e: FormEvent) {
     e.preventDefault();
     sendTurn(input);
+  }
+
+  function selectProduct(p: ProductOption) {
+    sendTurn(p.name);
   }
 
   async function handleUpload(doc: RequiredDocument, file: File) {
@@ -235,16 +259,29 @@ export default function LoanAssistantChat() {
               <p className="text-sm text-slate-400">Connecting you to the assistant…</p>
             )}
             {messages.map((m, i) => (
-              <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
-                <div
-                  className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm ${
-                    m.role === "user"
-                      ? "bg-indigo-600 text-white"
-                      : "border border-slate-200 bg-white text-slate-800"
-                  }`}
-                >
-                  {m.text}
+              <div key={i}>
+                <div className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+                  <div
+                    className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm ${
+                      m.role === "user"
+                        ? "bg-indigo-600 text-white"
+                        : "border border-slate-200 bg-white text-slate-800"
+                    }`}
+                  >
+                    {m.role === "agent" ? (
+                      <ChatMarkdown text={m.text} />
+                    ) : (
+                      <span className="whitespace-pre-wrap">{m.text}</span>
+                    )}
+                  </div>
                 </div>
+                {m.products && m.products.length > 0 && (
+                  <ProductOptionCards
+                    products={m.products}
+                    interactive={i === messages.length - 1 && stage === "product_selection" && !sending}
+                    onSelect={selectProduct}
+                  />
+                )}
               </div>
             ))}
             {sending && (
@@ -298,6 +335,7 @@ export default function LoanAssistantChat() {
                 <IconPaperclip className="h-4.5 w-4.5" />
               </label>
               <input
+                ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 disabled={!sessionId || sending}

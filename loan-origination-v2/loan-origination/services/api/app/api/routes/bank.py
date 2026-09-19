@@ -6,8 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.audit_labels import resolve_entity_labels
 from app.core.config import settings
-from app.core.deps import get_current_staff, get_current_user, require_bank_permission
+from app.core.deps import get_current_staff, get_current_user, require_bank_manager, require_bank_permission
 from app.core.security import hash_password
 from app.db.session import get_db
 from app.models.audit_log import AuditLog
@@ -20,7 +21,7 @@ from app.models.loan_decision import LoanDecision
 from app.models.loan_product import LoanProduct, generate_product_code
 from app.models.notification import Notification
 from app.models.user import User
-from app.schemas.admin import LendingPolicyOut, LoanProductOut
+from app.schemas.admin import AuditLogOut, LendingPolicyOut, LoanProductOut
 from app.schemas.auth import UserOut
 from app.schemas.bank import (
     ApplicationDecisionRequest,
@@ -80,6 +81,7 @@ async def create_bank_staff(
 
     db.add(
         AuditLog(
+            bank_id=actor.bank_id,
             entity_type="user",
             entity_id=str(staff.id),
             action="staff_created",
@@ -121,6 +123,7 @@ async def update_bank_staff(
 
     db.add(
         AuditLog(
+            bank_id=actor.bank_id,
             entity_type="user",
             entity_id=str(target.id),
             action="staff_updated",
@@ -150,6 +153,7 @@ async def deactivate_bank_staff(
         target.is_active = False
         db.add(
             AuditLog(
+                bank_id=actor.bank_id,
                 entity_type="user",
                 entity_id=str(target.id),
                 action="staff_deactivated",
@@ -176,6 +180,7 @@ async def reactivate_bank_staff(
         target.is_active = True
         db.add(
             AuditLog(
+                bank_id=actor.bank_id,
                 entity_type="user",
                 entity_id=str(target.id),
                 action="staff_reactivated",
@@ -214,6 +219,7 @@ async def create_bank_product(
     await db.flush()
     db.add(
         AuditLog(
+            bank_id=actor.bank_id,
             entity_type="loan_product",
             entity_id=str(product.id),
             action="product_created",
@@ -246,6 +252,7 @@ async def update_bank_product(
 
     db.add(
         AuditLog(
+            bank_id=actor.bank_id,
             entity_type="loan_product",
             entity_id=str(product.id),
             action="product_updated",
@@ -276,6 +283,7 @@ async def deactivate_bank_product(
         product.is_active = False
         db.add(
             AuditLog(
+                bank_id=actor.bank_id,
                 entity_type="loan_product",
                 entity_id=str(product.id),
                 action="product_deactivated",
@@ -302,6 +310,7 @@ async def reactivate_bank_product(
         product.is_active = True
         db.add(
             AuditLog(
+                bank_id=actor.bank_id,
                 entity_type="loan_product",
                 entity_id=str(product.id),
                 action="product_reactivated",
@@ -336,6 +345,7 @@ async def create_bank_policy(
     await db.flush()
     db.add(
         AuditLog(
+            bank_id=actor.bank_id,
             entity_type="lending_policy",
             entity_id=str(policy.id),
             action="policy_created",
@@ -374,6 +384,7 @@ async def update_bank_policy(
 
     db.add(
         AuditLog(
+            bank_id=actor.bank_id,
             entity_type="lending_policy",
             entity_id=str(policy.id),
             action="policy_updated",
@@ -404,6 +415,7 @@ async def deactivate_bank_policy(
         policy.is_active = False
         db.add(
             AuditLog(
+                bank_id=actor.bank_id,
                 entity_type="lending_policy",
                 entity_id=str(policy.id),
                 action="policy_deactivated",
@@ -430,6 +442,7 @@ async def reactivate_bank_policy(
         policy.is_active = True
         db.add(
             AuditLog(
+                bank_id=actor.bank_id,
                 entity_type="lending_policy",
                 entity_id=str(policy.id),
                 action="policy_reactivated",
@@ -458,10 +471,19 @@ async def list_bank_applications(staff: User = Depends(get_current_staff), db: A
     )
     position_by_app = {esc.application_id: (pos.title if pos else None) for esc, pos in esc_result.all()}
 
+    applicants_result = await db.execute(
+        select(User).where(User.id.in_({a.applicant_id for a in applications}))
+    )
+    applicant_by_id = {u.id: u for u in applicants_result.scalars().all()}
+
     out = []
     for app in applications:
         item = LoanApplicationOut.model_validate(app)
         item.pending_position_title = position_by_app.get(app.id)
+        applicant = applicant_by_id.get(app.applicant_id)
+        if applicant:
+            item.applicant_name = applicant.full_name
+            item.applicant_email = applicant.email
         out.append(item)
     return out
 
@@ -529,6 +551,7 @@ async def decide_loan_application(
 
     db.add(
         AuditLog(
+            bank_id=staff.bank_id,
             entity_type="loan_application",
             entity_id=str(application.id),
             action=f"staff_{payload.decision}",
@@ -599,6 +622,27 @@ async def get_application_chat_report(
         ) from exc
 
     return resp.json()
+
+
+@router.get("/audit-logs", response_model=list[AuditLogOut])
+async def list_bank_audit_logs(staff: User = Depends(require_bank_manager), db: AsyncSession = Depends(get_db)):
+    """A bank manager's view of their own bank's activity — staff added or
+    changed, products/policies created or (de)activated, applications
+    decided or submitted. Manager-only (require_bank_manager: needs both
+    can_manage_staff and can_manage_products), unlike Team/Products/Policies
+    which each only need one of those flags — this surfaces everything, so
+    it's gated on holding full authority, not partial."""
+    result = await db.execute(
+        select(AuditLog).where(AuditLog.bank_id == staff.bank_id).order_by(AuditLog.created_at.desc()).limit(200)
+    )
+    logs = result.scalars().all()
+    labels = await resolve_entity_labels(db, logs)
+    return [
+        AuditLogOut.model_validate(log).model_copy(
+            update={"entity_label": labels.get((log.entity_type, log.entity_id))}
+        )
+        for log in logs
+    ]
 
 
 @router.get("/notifications", response_model=list[NotificationOut])

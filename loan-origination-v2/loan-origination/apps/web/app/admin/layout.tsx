@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import {
+  IconBuilding,
   IconClose,
   IconFile,
   IconGrid,
@@ -18,6 +19,7 @@ import {
 
 const NAV = [
   { href: "/admin", label: "Overview", icon: IconGrid },
+  { href: "/admin/banks", label: "Banks", icon: IconBuilding },
   { href: "/admin/users", label: "Users", icon: IconUsers },
   { href: "/admin/products", label: "Products", icon: IconPackage },
   { href: "/admin/policies", label: "Policies", icon: IconShield },
