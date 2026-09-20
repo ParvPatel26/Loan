@@ -108,7 +108,7 @@ async def upload_document(
         content_type=file.content_type or "application/octet-stream",
         status="uploaded",
     )
-    
+
     db.add(document)
 
     await db.flush()
@@ -145,7 +145,7 @@ async def upload_document(
 
     await db.commit()
     await db.refresh(document)
-  
+
     response = {
         "document_id": str(document.id),
         "verification_type": document.verification_type,
@@ -172,4 +172,3 @@ async def upload_next_required_document(
         request=request, session_id=session_id,
         verification_type=next_needed["code"], file=file, db=db,
     )
-
